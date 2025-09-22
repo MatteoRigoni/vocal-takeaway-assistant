@@ -1,4 +1,4 @@
-# Vocal Takeaway Engine – Pizzeria da Asporto
+# Vocal Takeaway Engine
 
 ## Product Goal
 Reusable take-away ordering system (pizzeria as example) with **voice/text orders**, configurable menu, pickup scheduling with throttling, payment simulation, and integrated **Kitchen Display System (KDS)**. Distributed as **one-liner installer (Docker Compose)** or offline bundle.
