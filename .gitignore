@@ -1,0 +1,11 @@
+# .NET
+bin/
+obj/
+# Node/Angular
+node_modules/
+dist/
+# VS/JetBrains
+.vscode/
+.idea/
+# Docker
+**/.DS_Store
