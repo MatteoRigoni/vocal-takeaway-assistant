@@ -23,7 +23,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../Takeaway.Api.csproj" />
+    <ProjectReference Include="..\Takeaway.Api\Takeaway.Api.csproj" />
   </ItemGroup>
 
 </Project>

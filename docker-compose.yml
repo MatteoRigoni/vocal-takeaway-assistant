@@ -4,7 +4,7 @@ name: ${COMPOSE_PROJECT_NAME:-voiceai}
 services:
   backend:
     build:
-      context: ./backend
+      context: ./backend/Takeaway.Api
       dockerfile: Dockerfile
     container_name: voiceai-backend
     environment:

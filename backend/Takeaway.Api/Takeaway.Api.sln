@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36408.4 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Takeaway.Api", "Takeaway.Api.csproj", "{1D9F2D25-8777-1881-C39E-68D0317DFE09}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Takeaway.Api.Tests", "..\Takeaway.Api.Tests\Takeaway.Api.Tests.csproj", "{08BA1B0E-46FD-6C44-A080-5054A1451630}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{1D9F2D25-8777-1881-C39E-68D0317DFE09}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1D9F2D25-8777-1881-C39E-68D0317DFE09}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1D9F2D25-8777-1881-C39E-68D0317DFE09}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1D9F2D25-8777-1881-C39E-68D0317DFE09}.Release|Any CPU.Build.0 = Release|Any CPU
+		{08BA1B0E-46FD-6C44-A080-5054A1451630}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{08BA1B0E-46FD-6C44-A080-5054A1451630}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{08BA1B0E-46FD-6C44-A080-5054A1451630}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{08BA1B0E-46FD-6C44-A080-5054A1451630}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {7DD04658-B6A3-4571-9CB5-B49C45F36295}
+	EndGlobalSection
+EndGlobal
