@@ -10,6 +10,8 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: "Development"
       ASPNETCORE_URLS: "http://+:8080"
+    volumes:
+      - ./data:/app/data
     expose:
       - "8080"
     healthcheck:

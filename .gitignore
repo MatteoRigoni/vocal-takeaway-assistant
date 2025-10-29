@@ -16,3 +16,5 @@ dist/
 *.user
 *.userosscache
 *.sln.docstates
+# Ignore local test database folder
+data/

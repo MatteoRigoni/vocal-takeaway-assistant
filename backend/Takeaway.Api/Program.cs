@@ -1,11 +1,12 @@
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Scalar.AspNetCore;
 using Takeaway.Api.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=takeaway.db";
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=data/takeaway.db";
 
 builder.Services.AddDbContext<TakeawayDbContext>(options =>
     options.UseSqlite(connectionString));
@@ -65,6 +66,12 @@ app.UseHttpsRedirection();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.MapScalarApiReference(options =>
+    {
+        options.WithTitle("Takeaway API");
+        options.WithTheme(ScalarTheme.BluePlanet);
+        options.WithSidebar(false);
+    });
 }
 
 app.MapGet("/", () => Results.Ok(new { app = "voice-ai-takeaway", service = "api", message = "hello from .NET 9" }));

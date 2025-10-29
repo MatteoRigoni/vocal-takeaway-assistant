@@ -1,32 +1,31 @@
 {
-  # Global options
-  auto_https off   # niente TLS automatico in locale
+  auto_https off
 }
 
 :80 {
-
-  #
-  # BACKEND -> http://localhost/api/...
-  #
-  handle_path /api/* {
-    # handle_path rimuove automaticamente il prefisso /api
-    # quindi /api/orders -> backend riceve /orders
+  # API -> /api e /api/...
+  handle_path /api* {
     reverse_proxy backend:8080
   }
 
-  #
-  # FRONTEND -> http://localhost/web/...
-  #
-  handle_path /web/* {
-    # handle_path rimuove /web
-    # quindi /web -> /  (index Angular via nginx)
+  # WEB -> /web e /web/... (SPA)
+  # Forza trailing slash su /web per evitare path vuoto verso upstream
+  handle /web {
+    redir /web/ 308
+  }
+  handle /web* {
+    # Rimuove il prefisso /web e inoltra il path risultante
+    uri strip_prefix /web
     reverse_proxy web:80
   }
 
-  #
-  # Root plain "/" -> redirect verso /web
-  #
-  handle_path / {
+  # /health del proxy (per healthcheck di caddy nel compose)
+  handle_path /health {
+    reverse_proxy backend:8080
+  }
+
+  # Root "/" -> redirect a /web
+  handle / {
     redir /web 302
   }
 
