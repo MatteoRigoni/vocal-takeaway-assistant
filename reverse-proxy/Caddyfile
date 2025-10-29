@@ -1,0 +1,37 @@
+{
+  # Global options
+  auto_https off   # niente TLS automatico in locale
+}
+
+:80 {
+
+  #
+  # BACKEND -> http://localhost/api/...
+  #
+  handle_path /api/* {
+    # handle_path rimuove automaticamente il prefisso /api
+    # quindi /api/orders -> backend riceve /orders
+    reverse_proxy backend:8080
+  }
+
+  #
+  # FRONTEND -> http://localhost/web/...
+  #
+  handle_path /web/* {
+    # handle_path rimuove /web
+    # quindi /web -> /  (index Angular via nginx)
+    reverse_proxy web:80
+  }
+
+  #
+  # Root plain "/" -> redirect verso /web
+  #
+  handle_path / {
+    redir /web 302
+  }
+
+  log {
+    output stdout
+    format console
+  }
+}

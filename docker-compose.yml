@@ -12,8 +12,6 @@ services:
       ASPNETCORE_URLS: "http://+:8080"
     expose:
       - "8080"
-    ports:
-      - "8081:8080"     # <--- mappo backend su http://localhost:8081
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
       interval: 10s
@@ -27,10 +25,27 @@ services:
     container_name: voiceai-web
     expose:
       - "80"
-    ports:
-      - "8080:80"       # <--- mappo web su http://localhost:8080
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      
+  caddy:
+    build:
+      context: ./reverse-proxy
+      dockerfile: Dockerfile
+    container_name: voiceai-proxy
+    depends_on:
+      - backend
+      - web
+    ports:
+      - "${CADDY_HTTP_PORT:-80}:80"
+      # Uncomment next line if you enable TLS in Caddyfile
+      # - "${CADDY_HTTPS_PORT:-443}:443"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/health"]
+      # The proxy /health maps to backend in our Caddyfile; this asserts routing is OK.
       interval: 10s
       timeout: 3s
       retries: 5

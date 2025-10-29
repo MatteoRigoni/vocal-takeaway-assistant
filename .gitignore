@@ -9,3 +9,10 @@ dist/
 .idea/
 # Docker
 **/.DS_Store
+# Visual Studio
+.vs/
+**/.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
