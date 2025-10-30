@@ -12,6 +12,10 @@ erDiagram
     Order ||--o{ Payment : has
     Order ||--|{ OrderItem : contains
     Product ||--|{ OrderItem : ordered
+    Product ||--o{ ProductVariant : offers
+    Product ||--o{ ProductModifier : optional
+    ProductVariant ||--|{ OrderItem : selected
+    Order ||--o{ AuditLog : records
 
     Shop {
         int Id PK
@@ -36,8 +40,10 @@ erDiagram
         string Name
         string Description
         decimal Price
+        decimal VatRate
         bool IsAvailable
         string ImageUrl
+        int StockQuantity
     }
 
     Customer {
@@ -82,7 +88,9 @@ erDiagram
         int OrderChannelId FK
         int OrderStatusId FK
         datetime OrderDate
+        datetime CreatedAt
         decimal TotalAmount
+        string OrderCode
         string DeliveryAddress
         string Notes
     }
@@ -91,9 +99,37 @@ erDiagram
         int Id PK
         int OrderId FK
         int ProductId FK
+        int ProductVariantId FK
         int Quantity
         decimal UnitPrice
         decimal Subtotal
         string Modifiers
+        string VariantName
+    }
+
+    ProductVariant {
+        int Id PK
+        int ProductId FK
+        string Name
+        decimal Price
+        decimal VatRate
+        bool IsDefault
+        int StockQuantity
+    }
+
+    ProductModifier {
+        int Id PK
+        int ProductId FK
+        string Name
+        decimal Price
+        decimal VatRate
+    }
+
+    AuditLog {
+        int Id PK
+        int OrderId FK
+        string EventType
+        datetime CreatedAt
+        string Payload
     }
 ```
