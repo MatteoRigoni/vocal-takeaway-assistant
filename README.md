@@ -6,6 +6,10 @@ Reusable take-away ordering system with voice/text orders.
 
 The domain entities, relationships and seed data are documented in [docs/domain-model.md](docs/domain-model.md).
 
+## Kitchen display dashboard
+
+The real-time kitchen display board powered by SignalR hubs and the Angular KDS client is documented in [docs/kds-dashboard-readme.md](docs/kds-dashboard-readme.md).
+
 ## Docker compose
 
 Launch the full stack with:
