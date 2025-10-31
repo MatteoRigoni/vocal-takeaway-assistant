@@ -65,6 +65,18 @@
         </div>
         <span class="ticket__total">{{ formatAmount(ticket.totalAmount) }}</span>
       </footer>
+
+      <div class="ticket__actions" *ngIf="ticketActions(ticket).length > 0">
+        <button
+          type="button"
+          *ngFor="let action of ticketActions(ticket)"
+          [class]="actionClass(action)"
+          [disabled]="isTicketUpdating(ticket)"
+          (click)="triggerAction(ticket, action)"
+        >
+          {{ action.label }}
+        </button>
+      </div>
     </article>
 
     <div class="ticket-empty" *ngIf="tickets().length === 0">

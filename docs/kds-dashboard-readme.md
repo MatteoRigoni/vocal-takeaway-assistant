@@ -8,6 +8,7 @@ This release adds a real-time kitchen display system that keeps restaurant teams
 - **Status tracking:** Tickets track status transitions (`Received`, `InPreparation`, `Ready`) and drop off the board automatically once they are completed or cancelled to keep the workspace tidy.
 - **Operational context:** Each ticket shows customer details, modifiers, collection time and running timers so staff can prioritise at a glance.
 - **Touch friendly controls:** Large hit targets, high contrast colours and real-time refresh make the UI suitable for wall-mounted tablets.
+- **Actionable tickets:** Kitchen staff can progress orders through `Start prep`, `Mark ready` and `Complete` actions without leaving the board.
 - **Audible ready alert:** When a ticket transitions to `Ready` the board emits a soft tone so counter staff know a pickup is waiting.
 
 ## Architecture Changes
@@ -34,6 +35,7 @@ The Angular app now routes `/kds` to a standalone `KdsBoardComponent` backed by 
 
 - Connects to `/hubs/kds` with automatic reconnects and replays a fresh snapshot after reconnects.
 - Maintains a signal-based store of tickets, exposes filters (`All`, `Pending`, `Cooking`, `Ready`) and periodically refreshes via REST as a safety net.
+- Provides contextual action buttons so chefs can move tickets between `Received`, `InPreparation`, `Ready` and `Completed` states. Buttons disable while updates are in-flight to avoid duplicate submissions.
 - Provides derived state for timers, connection badges, counts and relative timestamps.
 - Uses Web Audio API to emit an audible cue when tickets flip to `Ready`.
 
