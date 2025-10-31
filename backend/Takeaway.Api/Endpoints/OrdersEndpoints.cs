@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Takeaway.Api.Contracts.Orders;
 using Takeaway.Api.Data;
+using Takeaway.Api.Domain.Constants;
 using Takeaway.Api.Domain.Entities;
 using Takeaway.Api.Extensions;
 using Takeaway.Api.Services;
@@ -14,9 +15,199 @@ namespace Takeaway.Api.Endpoints;
 
 public static class OrdersEndpoints
 {
+    private static readonly Dictionary<string, string> PaymentMethodMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["cash"] = "Cash",
+        ["card"] = "CreditCard",
+        ["creditcard"] = "CreditCard",
+        ["online"] = "Digital",
+        ["online-sim"] = "Digital",
+        ["online_sim"] = "Digital",
+        ["digital"] = "Digital"
+    };
+
     public static IEndpointRouteBuilder MapOrdersEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/orders");
+
+        group.MapGet("/{code}",
+            async Task<Results<Ok<OrderStatusResponse>, NotFound>>
+            (
+                string code,
+                TakeawayDbContext dbContext,
+                CancellationToken cancellationToken
+            ) =>
+            {
+                var order = await BuildOrderQuery(dbContext)
+                    .FirstOrDefaultAsync(o => o.OrderCode == code, cancellationToken);
+
+                return order is null
+                    ? TypedResults.NotFound()
+                    : TypedResults.Ok(ToOrderStatusResponse(order));
+            })
+        .WithName("GetOrderByCode")
+        .WithSummary("Get the current status for an order using its public code.");
+
+        group.MapPatch("/{id:int}",
+            async Task<Results<
+                Ok<OrderStatusResponse>,
+                BadRequest<ValidationProblemDetails>,
+                BadRequest<string>,
+                NotFound>>
+            (
+                int id,
+                UpdateOrderRequest request,
+                IValidator<UpdateOrderRequest> validator,
+                TakeawayDbContext dbContext,
+                IDateTimeProvider clock,
+                IOrderStatusNotifier statusNotifier,
+                IOrderCancellationService cancellationService,
+                CancellationToken cancellationToken
+            ) =>
+            {
+                var validationResult = await validator.ValidateAsync(request, cancellationToken);
+                if (!validationResult.IsValid)
+                    return TypedResults.BadRequest(validationResult.ToProblemDetails());
+
+                var order = await BuildOrderQuery(dbContext)
+                    .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
+
+                if (order is null)
+                    return TypedResults.NotFound();
+
+                var statusChanged = false;
+
+                if (request.Status is not null)
+                {
+                    if (!OrderStatusCatalog.TryNormalize(request.Status, out var normalizedStatus))
+                        return TypedResults.BadRequest($"Unknown status '{request.Status}'.");
+
+                    var status = await dbContext.OrderStatuses
+                        .FirstOrDefaultAsync(s => s.Name == normalizedStatus, cancellationToken);
+
+                    if (status is null)
+                        return TypedResults.BadRequest($"Status '{normalizedStatus}' is not available.");
+
+                    if (string.Equals(normalizedStatus, OrderStatusCatalog.Cancelled, StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!cancellationService.CanCancel(order, clock.UtcNow, out var reason))
+                            return TypedResults.BadRequest(reason ?? "Order cannot be cancelled.");
+                    }
+
+                    if (order.OrderStatusId != status.Id)
+                    {
+                        var previousStatus = order.OrderStatus?.Name;
+
+                        order.OrderStatusId = status.Id;
+                        order.OrderStatus = status;
+                        statusChanged = true;
+
+                        dbContext.AuditLogs.Add(new AuditLog
+                        {
+                            OrderId = order.Id,
+                            EventType = "OrderStatusUpdated",
+                            CreatedAt = clock.UtcNow,
+                            Payload = JsonSerializer.Serialize(new
+                            {
+                                Previous = previousStatus,
+                                Current = status.Name
+                            })
+                        });
+                    }
+                }
+
+                if (request.PickupAtUtc.HasValue)
+                {
+                    var pickupUtc = NormalizeToUtc(request.PickupAtUtc.Value);
+                    order.OrderDate = NormalizeSlot(pickupUtc);
+                }
+
+                if (request.Notes is not null)
+                {
+                    order.Notes = request.Notes;
+                }
+
+                await dbContext.SaveChangesAsync(cancellationToken);
+
+                if (statusChanged)
+                {
+                    await statusNotifier.NotifyStatusChangedAsync(order, cancellationToken);
+                }
+
+                return TypedResults.Ok(ToOrderStatusResponse(order));
+            })
+        .WithName("UpdateOrder")
+        .WithSummary("Update an order's status, pickup time or notes.");
+
+        group.MapPost("/{id:int}/pay",
+            async Task<Results<
+                Ok<OrderStatusResponse>,
+                BadRequest<ValidationProblemDetails>,
+                BadRequest<string>,
+                NotFound>>
+            (
+                int id,
+                PayOrderRequest request,
+                IValidator<PayOrderRequest> validator,
+                TakeawayDbContext dbContext,
+                IDateTimeProvider clock,
+                IOrderStatusNotifier statusNotifier,
+                CancellationToken cancellationToken
+            ) =>
+            {
+                var validationResult = await validator.ValidateAsync(request, cancellationToken);
+                if (!validationResult.IsValid)
+                    return TypedResults.BadRequest(validationResult.ToProblemDetails());
+
+                if (!TryResolvePaymentMethod(request.Method, out var paymentMethodName))
+                    return TypedResults.BadRequest("Payment method must be one of: cash, card, online-sim.");
+
+                var order = await BuildOrderQuery(dbContext)
+                    .FirstOrDefaultAsync(o => o.Id == id, cancellationToken);
+
+                if (order is null)
+                    return TypedResults.NotFound();
+
+                if (order.Payments.Any(p => string.Equals(p.Status, "Completed", StringComparison.OrdinalIgnoreCase)))
+                    return TypedResults.BadRequest("Order already has a completed payment.");
+
+                var paymentMethod = await dbContext.PaymentMethods
+                    .FirstOrDefaultAsync(pm => pm.Name == paymentMethodName, cancellationToken);
+
+                if (paymentMethod is null)
+                    return TypedResults.BadRequest($"Payment method '{paymentMethodName}' is not available.");
+
+                var payment = new Payment
+                {
+                    PaymentMethodId = paymentMethod.Id,
+                    Amount = order.TotalAmount,
+                    PaymentDate = clock.UtcNow,
+                    Status = "Completed",
+                    PaymentMethod = paymentMethod
+                };
+
+                order.Payments.Add(payment);
+
+                dbContext.AuditLogs.Add(new AuditLog
+                {
+                    OrderId = order.Id,
+                    EventType = "OrderPaid",
+                    CreatedAt = clock.UtcNow,
+                    Payload = JsonSerializer.Serialize(new
+                    {
+                        Method = paymentMethod.Name,
+                        payment.Amount
+                    })
+                });
+
+                await dbContext.SaveChangesAsync(cancellationToken);
+
+                await statusNotifier.NotifyPaymentAsync(order, payment, cancellationToken);
+
+                return TypedResults.Ok(ToOrderStatusResponse(order));
+            })
+        .WithName("PayOrder")
+        .WithSummary("Simulate a payment for the specified order.");
 
         group.MapPost("",
             async Task<Results<
@@ -208,6 +399,62 @@ public static class OrdersEndpoints
 
         return app;
     }
+
+    private static IQueryable<Order> BuildOrderQuery(TakeawayDbContext dbContext)
+        => dbContext.Orders
+            .Include(o => o.OrderStatus)
+            .Include(o => o.Payments)
+                .ThenInclude(p => p.PaymentMethod);
+
+    private static OrderStatusResponse ToOrderStatusResponse(Order order)
+    {
+        var payments = order.Payments
+            .OrderByDescending(p => p.PaymentDate)
+            .Select(p => new OrderPaymentDto(
+                p.Id,
+                p.PaymentMethod?.Name ?? string.Empty,
+                p.Amount,
+                p.PaymentDate,
+                p.Status))
+            .ToList();
+
+        var isPaid = payments.Any(p => string.Equals(p.Status, "Completed", StringComparison.OrdinalIgnoreCase));
+
+        return new OrderStatusResponse(
+            order.Id,
+            order.OrderCode,
+            order.OrderStatus?.Name ?? OrderStatusCatalog.Received,
+            order.CreatedAt,
+            order.OrderDate,
+            order.Notes,
+            order.TotalAmount,
+            isPaid,
+            payments);
+    }
+
+    private static bool TryResolvePaymentMethod(string method, out string paymentMethodName)
+    {
+        paymentMethodName = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(method))
+            return false;
+
+        var candidate = method.Trim();
+
+        if (PaymentMethodMap.TryGetValue(candidate, out paymentMethodName))
+            return true;
+
+        var normalized = candidate.Replace("_", "-", StringComparison.Ordinal);
+        return PaymentMethodMap.TryGetValue(normalized, out paymentMethodName);
+    }
+
+    private static DateTime NormalizeToUtc(DateTime timestamp)
+        => timestamp.Kind switch
+        {
+            DateTimeKind.Utc => timestamp,
+            DateTimeKind.Local => timestamp.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(timestamp, DateTimeKind.Utc)
+        };
 
     private static DateTime NormalizeSlot(DateTime timestampUtc)
     {
