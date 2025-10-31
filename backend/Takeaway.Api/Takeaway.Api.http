@@ -9,3 +9,49 @@ GET {{Takeaway.Api_HostAddress}}/health
 Accept: application/json
 
 ###
+
+
+### Crea Ordine per Test KDS
+POST http://localhost/api/orders
+Content-Type: application/json
+
+{
+  "shopId": 1,
+  "orderChannelId": 1,
+  "deliveryAddress": "Via Roma 123, Firenze",
+  "customer": {
+    "name": "Mario Rossi",
+    "phone": "+39055123456",
+    "email": "mario.rossi@example.com",
+    "address": "Via Roma 123, Firenze"
+  },
+  "items": [
+    {
+      "productId": 1,
+      "quantity": 2,
+      "variantId": 1,
+      "modifierIds": [1]
+    },
+    {
+      "productId": 3,
+      "quantity": 1
+    }
+  ],
+  "notes": "Porta alla porta per favore"
+}
+
+### Crea Ordine Semplice (Senza Customer)
+POST http://localhost/api/orders
+Content-Type: application/json
+
+{
+  "shopId": 1,
+  "orderChannelId": 1,
+  "deliveryAddress": "Via Roma 123, Firenze",
+  "items": [
+    {
+      "productId": 1,
+      "quantity": 1
+    }
+  ]
+}

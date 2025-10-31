@@ -1,0 +1,75 @@
+<section class="kds-shell">
+  <header class="kds-header">
+    <div class="kds-header__titles">
+      <h1>Kitchen Display</h1>
+      <p class="kds-subtitle">Touch-friendly queue for incoming takeaway orders.</p>
+    </div>
+    <div class="kds-header__status">
+      <span [class]="connectionBadgeClass()">{{ connectionDescription() }}</span>
+      <div class="kds-header__meta">
+        <span>Updated {{ describeRelative(lastSync()) }}</span>
+        <span>Next refresh {{ describeCountdown(nextRefresh()) }}</span>
+        <span>Active tickets {{ countFor('all') }}</span>
+      </div>
+    </div>
+  </header>
+
+  <nav class="kds-filters">
+    <button
+      type="button"
+      *ngFor="let filter of filters"
+      (click)="setFilter(filter.key)"
+      [class.kds-filter--active]="isFilterActive(filter.key)"
+    >
+      <span class="kds-filter__title">{{ filter.label }}</span>
+      <span class="kds-filter__count">{{ countFor(filter.key) }}</span>
+      <span class="kds-filter__hint">{{ filter.description }}</span>
+    </button>
+  </nav>
+
+  <p class="kds-error" *ngIf="errorMessage() as error">{{ error }}</p>
+
+  <section class="kds-board">
+    <article class="ticket" *ngFor="let ticket of tickets()">
+      <header class="ticket__header">
+        <div>
+          <h2>Order {{ ticket.orderCode }}</h2>
+          <p class="ticket__customer" *ngIf="showCustomer(ticket)">
+            {{ ticket.customerName || 'Guest customer' }}
+            <span *ngIf="ticket.customerPhone">· {{ ticket.customerPhone }}</span>
+          </p>
+        </div>
+        <div class="ticket__status">
+          <span [class]="statusClass(ticket.status)">{{ statusLabel(ticket.status) }}</span>
+          <span class="ticket__timer">⏱ {{ formatElapsed(ticket) }}</span>
+        </div>
+      </header>
+
+      <ul class="ticket__items">
+        <li *ngFor="let item of ticket.items">
+          <div class="ticket__item-line">
+            <span class="ticket__item-qty">{{ item.quantity }}×</span>
+            <span class="ticket__item-name">{{ item.productName }}</span>
+            <span class="ticket__item-variant" *ngIf="item.variantName">({{ item.variantName }})</span>
+          </div>
+          <div class="ticket__modifiers" *ngIf="item.modifiers.length">
+            <span *ngFor="let modifier of item.modifiers">+ {{ modifier }}</span>
+          </div>
+        </li>
+      </ul>
+
+      <footer class="ticket__footer">
+        <div>
+          <span class="ticket__pickup">Pickup {{ formatPickup(ticket.pickupAtUtc) }}</span>
+          <p class="ticket__notes" *ngIf="ticket.notes">{{ ticket.notes }}</p>
+        </div>
+        <span class="ticket__total">{{ formatAmount(ticket.totalAmount) }}</span>
+      </footer>
+    </article>
+
+    <div class="ticket-empty" *ngIf="tickets().length === 0">
+      <p>No tickets match your current filter.</p>
+      <p class="ticket-empty__hint">New orders appear within a second of being placed.</p>
+    </div>
+  </section>
+</section>

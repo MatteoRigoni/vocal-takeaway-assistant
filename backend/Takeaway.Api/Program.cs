@@ -34,6 +34,7 @@ builder.Services.AddScoped<IOrderThrottlingService, OrderThrottlingService>();
 builder.Services.AddScoped<IOrderCodeGenerator, OrderCodeGenerator>();
 builder.Services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
 builder.Services.AddSingleton<IOrderStatusNotifier, OrderStatusNotifier>();
+builder.Services.AddSingleton<IKitchenDisplayNotifier, KitchenDisplayNotifier>();
 builder.Services.AddSingleton<IOrderCancellationService, OrderCancellationService>();
 
 var app = builder.Build();
@@ -102,7 +103,8 @@ app.MapGet("/health", () => Results.Ok(new { status = "Healthy", service = "api"
 app.MapMenuEndpoints();
 app.MapOrdersEndpoints();
 app.MapCustomerEndpoints();
-app.MapHub<OrderStatusHub>("/hubs/orders");
+app.MapHub<OrdersHub>("/hubs/orders");
+app.MapHub<KdsHub>("/hubs/kds");
 
 app.Run();
 
