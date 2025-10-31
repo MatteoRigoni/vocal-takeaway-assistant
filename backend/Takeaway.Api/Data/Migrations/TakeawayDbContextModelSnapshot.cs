@@ -265,12 +265,18 @@ namespace Takeaway.Api.Data.Migrations
                         new
                         {
                             Id = 3,
+                            Description = "Order ready for pickup",
+                            Name = "Ready"
+                        },
+                        new
+                        {
+                            Id = 4,
                             Description = "Order completed",
                             Name = "Completed"
                         },
                         new
                         {
-                            Id = 4,
+                            Id = 5,
                             Description = "Order cancelled",
                             Name = "Cancelled"
                         });

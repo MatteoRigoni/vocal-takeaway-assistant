@@ -10,7 +10,7 @@ namespace Takeaway.Api.Tests.Unit;
 
 public class OrderCancellationServiceTests
 {
-    private readonly OrderCancellationService _service = new(Options.Create(new OrderCancellationOptions
+    private readonly OrderCancellationService _service = new(Microsoft.Extensions.Options.Options.Create(new OrderCancellationOptions
     {
         CancellationWindowMinutes = 10
     }));
@@ -36,7 +36,7 @@ public class OrderCancellationServiceTests
     [Fact]
     public void CanCancel_ReturnsFalse_WhenInsideWindow()
     {
-        var service = new OrderCancellationService(Options.Create(new OrderCancellationOptions
+        var service = new OrderCancellationService(Microsoft.Extensions.Options.Options.Create(new OrderCancellationOptions
         {
             CancellationWindowMinutes = 15
         }));

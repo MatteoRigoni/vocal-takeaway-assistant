@@ -106,41 +106,42 @@ app.MapHub<OrderStatusHub>("/hubs/orders");
 
 app.Run();
 
-public partial class Program;
-
-static void EnsureReferenceData(TakeawayDbContext dbContext, ILogger logger)
+public partial class Program
 {
-    var desiredStatuses = new Dictionary<string, string>
+    static void EnsureReferenceData(TakeawayDbContext dbContext, ILogger logger)
     {
-        [OrderStatusCatalog.Received] = "Order received",
-        [OrderStatusCatalog.InPreparation] = "Order is being prepared",
-        [OrderStatusCatalog.Ready] = "Order ready for pickup",
-        [OrderStatusCatalog.Completed] = "Order completed",
-        [OrderStatusCatalog.Cancelled] = "Order cancelled"
-    };
-
-    var existing = dbContext.OrderStatuses
-        .AsNoTracking()
-        .ToDictionary(s => s.Name, StringComparer.OrdinalIgnoreCase);
-
-    var added = false;
-
-    foreach (var (name, description) in desiredStatuses)
-    {
-        if (existing.ContainsKey(name))
-            continue;
-
-        dbContext.OrderStatuses.Add(new OrderStatus
+        var desiredStatuses = new Dictionary<string, string>
         {
-            Name = name,
-            Description = description
-        });
-        logger.LogInformation("Seeding missing order status {Status}", name);
-        added = true;
-    }
+            [OrderStatusCatalog.Received] = "Order received",
+            [OrderStatusCatalog.InPreparation] = "Order is being prepared",
+            [OrderStatusCatalog.Ready] = "Order ready for pickup",
+            [OrderStatusCatalog.Completed] = "Order completed",
+            [OrderStatusCatalog.Cancelled] = "Order cancelled"
+        };
 
-    if (added)
-    {
-        dbContext.SaveChanges();
+        var existing = dbContext.OrderStatuses
+            .AsNoTracking()
+            .ToDictionary(s => s.Name, StringComparer.OrdinalIgnoreCase);
+
+        var added = false;
+
+        foreach (var (name, description) in desiredStatuses)
+        {
+            if (existing.ContainsKey(name))
+                continue;
+
+            dbContext.OrderStatuses.Add(new OrderStatus
+            {
+                Name = name,
+                Description = description
+            });
+            logger.LogInformation("Seeding missing order status {Status}", name);
+            added = true;
+        }
+
+        if (added)
+        {
+            dbContext.SaveChanges();
+        }
     }
 }
