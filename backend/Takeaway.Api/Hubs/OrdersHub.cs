@@ -1,0 +1,7 @@
+using Microsoft.AspNetCore.SignalR;
+
+namespace Takeaway.Api.Hubs;
+
+public class OrdersHub : Hub
+{
+}

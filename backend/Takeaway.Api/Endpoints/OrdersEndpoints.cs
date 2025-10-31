@@ -1,4 +1,6 @@
-﻿using System.Linq;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using FluentValidation;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -48,6 +50,47 @@ public static class OrdersEndpoints
         .WithName("GetOrderByCode")
         .WithSummary("Get the current status for an order using its public code.");
 
+        group.MapGet("/kds",
+            async Task<Ok<IReadOnlyList<KdsOrderTicketDto>>>
+            (
+                [FromQuery(Name = "status")] string? statusFilter,
+                TakeawayDbContext dbContext,
+                CancellationToken cancellationToken
+            ) =>
+            {
+                var query = dbContext.Orders
+                    .AsNoTracking()
+                    .IncludeKitchenDisplayData();
+
+                if (!string.IsNullOrWhiteSpace(statusFilter))
+                {
+                    var requested = statusFilter
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        .Select(s => OrderStatusCatalog.TryNormalize(s, out var normalized) ? normalized : s)
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                    query = query.Where(o => requested.Contains(o.OrderStatus.Name));
+                }
+                else
+                {
+                    query = query.Where(o =>
+                        o.OrderStatus.Name != OrderStatusCatalog.Completed &&
+                        o.OrderStatus.Name != OrderStatusCatalog.Cancelled);
+                }
+
+                var orders = await query
+                    .OrderBy(o => o.CreatedAt)
+                    .ToListAsync(cancellationToken);
+
+                var tickets = orders
+                    .Select(o => o.ToKitchenTicketDto())
+                    .ToList();
+
+                return TypedResults.Ok<IReadOnlyList<KdsOrderTicketDto>>(tickets);
+            })
+        .WithName("GetKitchenDisplayOrders")
+        .WithSummary("Get the active kitchen display queue.");
+
         group.MapPatch("/{id:int}",
             async Task<Results<
                 Ok<OrderStatusResponse>,
@@ -61,6 +104,7 @@ public static class OrdersEndpoints
                 TakeawayDbContext dbContext,
                 IDateTimeProvider clock,
                 IOrderStatusNotifier statusNotifier,
+                IKitchenDisplayNotifier kitchenNotifier,
                 IOrderCancellationService cancellationService,
                 CancellationToken cancellationToken
             ) =>
@@ -76,6 +120,7 @@ public static class OrdersEndpoints
                     return TypedResults.NotFound();
 
                 var statusChanged = false;
+                var kitchenRelevantChange = false;
 
                 if (request.Status is not null)
                 {
@@ -101,6 +146,7 @@ public static class OrdersEndpoints
                         order.OrderStatusId = status.Id;
                         order.OrderStatus = status;
                         statusChanged = true;
+                        kitchenRelevantChange = true;
 
                         dbContext.AuditLogs.Add(new AuditLog
                         {
@@ -120,11 +166,13 @@ public static class OrdersEndpoints
                 {
                     var pickupUtc = NormalizeToUtc(request.PickupAtUtc.Value);
                     order.OrderDate = NormalizeSlot(pickupUtc);
+                    kitchenRelevantChange = true;
                 }
 
                 if (request.Notes is not null)
                 {
                     order.Notes = request.Notes;
+                    kitchenRelevantChange = true;
                 }
 
                 await dbContext.SaveChangesAsync(cancellationToken);
@@ -132,6 +180,18 @@ public static class OrdersEndpoints
                 if (statusChanged)
                 {
                     await statusNotifier.NotifyStatusChangedAsync(order, cancellationToken);
+                }
+
+                if (kitchenRelevantChange)
+                {
+                    if (ShouldDisplayOnKitchen(order.OrderStatus?.Name))
+                    {
+                        await kitchenNotifier.NotifyTicketUpdatedAsync(order, cancellationToken);
+                    }
+                    else
+                    {
+                        await kitchenNotifier.NotifyTicketRemovedAsync(order.Id, cancellationToken);
+                    }
                 }
 
                 return TypedResults.Ok(ToOrderStatusResponse(order));
@@ -223,6 +283,8 @@ public static class OrdersEndpoints
                 IOrderThrottlingService throttlingService,
                 IDateTimeProvider clock,
                 IOrderCodeGenerator codeGenerator,
+                IOrderStatusNotifier statusNotifier,
+                IKitchenDisplayNotifier kitchenNotifier,
                 HttpResponse httpResponse,
                 CancellationToken cancellationToken
             ) =>
@@ -232,26 +294,28 @@ public static class OrdersEndpoints
                     return TypedResults.BadRequest(validationResult.ToProblemDetails());
 
                 var slotStart = NormalizeSlot(request.RequestedSlotUtc ?? clock.UtcNow);
+                var receivedStatus = await dbContext.OrderStatuses
+                    .FirstAsync(s => s.Name == OrderStatusCatalog.Received, cancellationToken);
 
                 if (!await throttlingService.CanPlaceOrderAsync(slotStart, cancellationToken))
                 {
                     // opzionale: 60 secondi o calcolato dal tuo servizio
                     httpResponse.Headers.Append("Retry-After", "60");
                     return TypedResults.Problem(
-                statusCode: StatusCodes.Status429TooManyRequests,
-                title: "Rate limit exceeded",
-                detail: "Too many orders for the selected time slot. Please retry later."
-            );
+                        statusCode: StatusCodes.Status429TooManyRequests,
+                        title: "Rate limit exceeded",
+                        detail: "Too many orders for the selected time slot. Please retry later.");
                 }
 
                 await using var transaction =
-            await dbContext.Database.BeginTransactionAsync(cancellationToken);
+                    await dbContext.Database.BeginTransactionAsync(cancellationToken);
 
                 var order = new Order
                 {
                     ShopId = request.ShopId,
                     OrderChannelId = request.OrderChannelId,
-                    OrderStatusId = 1,
+                    OrderStatusId = receivedStatus.Id,
+                    OrderStatus = receivedStatus,
                     OrderDate = slotStart,
                     CreatedAt = clock.UtcNow,
                     DeliveryAddress = request.DeliveryAddress,
@@ -264,7 +328,7 @@ public static class OrdersEndpoints
                 if (request.CustomerId.HasValue)
                 {
                     customer = await dbContext.Customers
-                .FirstOrDefaultAsync(c => c.Id == request.CustomerId.Value, cancellationToken);
+                        .FirstOrDefaultAsync(c => c.Id == request.CustomerId.Value, cancellationToken);
                     if (customer == null)
                         return TypedResults.BadRequest("Customer not found");
                 }
@@ -288,9 +352,9 @@ public static class OrdersEndpoints
                 foreach (var item in request.Items)
                 {
                     var product = await dbContext.Products
-                .Include(p => p.Variants)
-                .Include(p => p.Modifiers)
-                .FirstOrDefaultAsync(p => p.Id == item.ProductId, cancellationToken);
+                        .Include(p => p.Variants)
+                        .Include(p => p.Modifiers)
+                        .FirstOrDefaultAsync(p => p.Id == item.ProductId, cancellationToken);
 
                     if (product is null)
                         return TypedResults.BadRequest($"Product {item.ProductId} not found");
@@ -299,15 +363,15 @@ public static class OrdersEndpoints
                         return TypedResults.BadRequest($"Product {product.Name} is not available");
 
                     var variant = item.VariantId.HasValue
-                ? product.Variants.FirstOrDefault(v => v.Id == item.VariantId.Value)
-                : product.Variants.FirstOrDefault(v => v.IsDefault);
+                        ? product.Variants.FirstOrDefault(v => v.Id == item.VariantId.Value)
+                        : product.Variants.FirstOrDefault(v => v.IsDefault);
 
                     if (item.VariantId.HasValue && variant is null)
                         return TypedResults.BadRequest($"Variant {item.VariantId.Value} is not available for product {product.Name}");
 
                     var modifiers = item.ModifierIds is { Count: > 0 }
-                ? product.Modifiers.Where(m => item.ModifierIds.Contains(m.Id)).ToList()
-                : new List<ProductModifier>();
+                        ? product.Modifiers.Where(m => item.ModifierIds.Contains(m.Id)).ToList()
+                        : new List<ProductModifier>();
 
                     if (item.ModifierIds is { Count: > 0 } && modifiers.Count != item.ModifierIds.Count)
                         return TypedResults.BadRequest("One or more modifiers are invalid");
@@ -329,7 +393,8 @@ public static class OrdersEndpoints
                         Quantity = item.Quantity,
                         UnitPrice = pricing.UnitPrice,
                         Subtotal = pricing.Subtotal,
-                        Modifiers = appliedModifiers.Length > 0 ? JsonSerializer.Serialize(appliedModifiers) : null
+                        Modifiers = appliedModifiers.Length > 0 ? JsonSerializer.Serialize(appliedModifiers) : null,
+                        Product = product
                     });
 
                     if (variant is not null)
@@ -347,7 +412,7 @@ public static class OrdersEndpoints
                 if (request.PaymentMethodId.HasValue)
                 {
                     var paymentMethodExists = await dbContext.PaymentMethods
-                .AnyAsync(pm => pm.Id == request.PaymentMethodId.Value, cancellationToken);
+                        .AnyAsync(pm => pm.Id == request.PaymentMethodId.Value, cancellationToken);
 
                     if (!paymentMethodExists)
                         return TypedResults.BadRequest("Payment method not found");
@@ -391,6 +456,10 @@ public static class OrdersEndpoints
                 await transaction.CommitAsync(cancellationToken);
 
                 var response = new CreateOrderResponse(order.Id, order.OrderCode, order.TotalAmount, order.OrderDate);
+
+                await statusNotifier.NotifyOrderCreatedAsync(order, cancellationToken);
+                await kitchenNotifier.NotifyTicketCreatedAsync(order, cancellationToken);
+
                 return TypedResults.Created($"/orders/{order.Id}", response);
             })
         .WithName("CreateOrder")
@@ -403,6 +472,9 @@ public static class OrdersEndpoints
     private static IQueryable<Order> BuildOrderQuery(TakeawayDbContext dbContext)
         => dbContext.Orders
             .Include(o => o.OrderStatus)
+            .Include(o => o.Customer)
+            .Include(o => o.Items)
+                .ThenInclude(i => i.Product)
             .Include(o => o.Payments)
                 .ThenInclude(p => p.PaymentMethod);
 
@@ -465,5 +537,16 @@ public static class OrdersEndpoints
 
         var slotMinutes = (timestampUtc.Minute / 15) * 15;
         return new DateTime(timestampUtc.Year, timestampUtc.Month, timestampUtc.Day, timestampUtc.Hour, slotMinutes, 0, DateTimeKind.Utc);
+    }
+
+    private static bool ShouldDisplayOnKitchen(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            return true;
+        }
+
+        return !string.Equals(status, OrderStatusCatalog.Completed, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(status, OrderStatusCatalog.Cancelled, StringComparison.OrdinalIgnoreCase);
     }
 }
