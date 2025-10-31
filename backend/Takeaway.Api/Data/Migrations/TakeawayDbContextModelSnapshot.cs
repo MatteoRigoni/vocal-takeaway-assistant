@@ -81,6 +81,9 @@ namespace Takeaway.Api.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<int?>("CustomerId")
                         .HasColumnType("INTEGER");
 
@@ -93,6 +96,10 @@ namespace Takeaway.Api.Data.Migrations
 
                     b.Property<int>("OrderChannelId")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("OrderCode")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
 
                     b.Property<DateTime>("OrderDate")
                         .HasColumnType("TEXT");
@@ -172,6 +179,9 @@ namespace Takeaway.Api.Data.Migrations
                     b.Property<int>("ProductId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("ProductVariantId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("Quantity")
                         .HasColumnType("INTEGER");
 
@@ -181,11 +191,16 @@ namespace Takeaway.Api.Data.Migrations
                     b.Property<decimal>("UnitPrice")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("VariantName")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("OrderId");
 
                     b.HasIndex("ProductId");
+
+                    b.HasIndex("ProductVariantId");
 
                     b.ToTable("OrderItems");
                 });
@@ -331,6 +346,12 @@ namespace Takeaway.Api.Data.Migrations
                     b.Property<int>("ShopId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("StockQuantity")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<decimal>("VatRate")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CategoryId");
@@ -348,7 +369,9 @@ namespace Takeaway.Api.Data.Migrations
                             IsAvailable = true,
                             Name = "Margherita",
                             Price = 7.50m,
-                            ShopId = 1
+                            ShopId = 1,
+                            StockQuantity = 100,
+                            VatRate = 0.10m
                         },
                         new
                         {
@@ -358,7 +381,9 @@ namespace Takeaway.Api.Data.Migrations
                             IsAvailable = true,
                             Name = "Diavola",
                             Price = 8.50m,
-                            ShopId = 1
+                            ShopId = 1,
+                            StockQuantity = 80,
+                            VatRate = 0.10m
                         },
                         new
                         {
@@ -367,9 +392,154 @@ namespace Takeaway.Api.Data.Migrations
                             Description = "Chilled 33cl can",
                             IsAvailable = true,
                             Name = "Coca-Cola",
-                            Price = 2.50m,
-                            ShopId = 1
+                            Price = 1.80m,
+                            ShopId = 1,
+                            StockQuantity = 200,
+                            VatRate = 0.22m
                         });
+                });
+
+            modelBuilder.Entity("Takeaway.Api.Domain.Entities.ProductModifier", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("Price")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<decimal>("VatRate")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("ProductModifiers");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            Name = "Extra Cheese",
+                            Price = 1.20m,
+                            ProductId = 1,
+                            VatRate = 0.10m
+                        },
+                        new
+                        {
+                            Id = 2,
+                            Name = "Olives",
+                            Price = 0.80m,
+                            ProductId = 1,
+                            VatRate = 0.10m
+                        },
+                        new
+                        {
+                            Id = 3,
+                            Name = "Extra Spicy",
+                            Price = 0.90m,
+                            ProductId = 2,
+                            VatRate = 0.10m
+                        });
+                });
+
+            modelBuilder.Entity("Takeaway.Api.Domain.Entities.ProductVariant", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("Price")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("StockQuantity")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<decimal>("VatRate")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("ProductVariants");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            IsDefault = true,
+                            Name = "Regular",
+                            Price = 7.50m,
+                            ProductId = 1,
+                            StockQuantity = 80,
+                            VatRate = 0.10m
+                        },
+                        new
+                        {
+                            Id = 2,
+                            IsDefault = false,
+                            Name = "Large",
+                            Price = 9.50m,
+                            ProductId = 1,
+                            StockQuantity = 40,
+                            VatRate = 0.10m
+                        },
+                        new
+                        {
+                            Id = 3,
+                            IsDefault = true,
+                            Name = "Regular",
+                            Price = 8.50m,
+                            ProductId = 2,
+                            StockQuantity = 60,
+                            VatRate = 0.10m
+                        });
+                });
+
+            modelBuilder.Entity("Takeaway.Api.Domain.Entities.AuditLog", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("OrderId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderId");
+
+                    b.ToTable("AuditLogs");
                 });
 
             modelBuilder.Entity("Takeaway.Api.Domain.Entities.Shop", b =>
@@ -466,6 +636,11 @@ namespace Takeaway.Api.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Takeaway.Api.Domain.Entities.ProductVariant", null)
+                        .WithMany()
+                        .HasForeignKey("ProductVariantId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Order");
 
                     b.Navigation("Product");
@@ -506,7 +681,44 @@ namespace Takeaway.Api.Data.Migrations
 
                     b.Navigation("Category");
 
+                    b.Navigation("Modifiers");
+
                     b.Navigation("Shop");
+
+                    b.Navigation("Variants");
+                });
+
+            modelBuilder.Entity("Takeaway.Api.Domain.Entities.ProductModifier", b =>
+                {
+                    b.HasOne("Takeaway.Api.Domain.Entities.Product", "Product")
+                        .WithMany("Modifiers")
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Product");
+                });
+
+            modelBuilder.Entity("Takeaway.Api.Domain.Entities.ProductVariant", b =>
+                {
+                    b.HasOne("Takeaway.Api.Domain.Entities.Product", "Product")
+                        .WithMany("Variants")
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Product");
+                });
+
+            modelBuilder.Entity("Takeaway.Api.Domain.Entities.AuditLog", b =>
+                {
+                    b.HasOne("Takeaway.Api.Domain.Entities.Order", "Order")
+                        .WithMany("AuditLogs")
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Order");
                 });
 
             modelBuilder.Entity("Takeaway.Api.Domain.Entities.Category", b =>
@@ -521,6 +733,8 @@ namespace Takeaway.Api.Data.Migrations
 
             modelBuilder.Entity("Takeaway.Api.Domain.Entities.Order", b =>
                 {
+                    b.Navigation("AuditLogs");
+
                     b.Navigation("Items");
 
                     b.Navigation("Payments");
@@ -543,7 +757,11 @@ namespace Takeaway.Api.Data.Migrations
 
             modelBuilder.Entity("Takeaway.Api.Domain.Entities.Product", b =>
                 {
+                    b.Navigation("Modifiers");
+
                     b.Navigation("OrderItems");
+
+                    b.Navigation("Variants");
                 });
 
             modelBuilder.Entity("Takeaway.Api.Domain.Entities.Shop", b =>

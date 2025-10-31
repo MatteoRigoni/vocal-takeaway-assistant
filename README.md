@@ -6,6 +6,17 @@ Reusable take-away ordering system with voice/text orders.
 
 The domain entities, relationships and seed data are documented in [docs/domain-model.md](docs/domain-model.md).
 
+## Docker compose
+
+Launch the full stack with:
+
+```bash
+docker compose up --build
+```
+
+The reverse proxy exposes the Angular frontend at `http://localhost:8080/web` and the backend API at `http://localhost:8080/api`.
+The backend publishes a health check at `/api/health` and interactive API documentation via Scalar at `/api/scalar` (in development mode).
+
 ### Database
 
 The backend uses Entity Framework Core with a SQLite database. Migrations are located under `backend/Data/Migrations` and are applied automatically on startup.

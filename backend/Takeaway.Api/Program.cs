@@ -3,6 +3,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Scalar.AspNetCore;
 using Takeaway.Api.Data;
+using Takeaway.Api.Endpoints;
+using Takeaway.Api.Options;
+using Takeaway.Api.Services;
+using Takeaway.Api.Validation;
+using FluentValidation;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,6 +19,13 @@ builder.Services.AddDbContext<TakeawayDbContext>(options =>
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+builder.Services.AddProblemDetails();
+builder.Services.AddValidatorsFromAssemblyContaining<CreateOrderRequestValidator>();
+builder.Services.Configure<OrderThrottlingOptions>(builder.Configuration.GetSection(OrderThrottlingOptions.SectionName));
+builder.Services.AddScoped<IOrderPricingService, OrderPricingService>();
+builder.Services.AddScoped<IOrderThrottlingService, OrderThrottlingService>();
+builder.Services.AddScoped<IOrderCodeGenerator, OrderCodeGenerator>();
+builder.Services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
 
 var app = builder.Build();
 
@@ -77,4 +89,10 @@ if (app.Environment.IsDevelopment())
 app.MapGet("/", () => Results.Ok(new { app = "voice-ai-takeaway", service = "api", message = "hello from .NET 9" }));
 app.MapGet("/health", () => Results.Ok(new { status = "Healthy", service = "api" }));
 
+app.MapMenuEndpoints();
+app.MapOrdersEndpoints();
+app.MapCustomerEndpoints();
+
 app.Run();
+
+public partial class Program;

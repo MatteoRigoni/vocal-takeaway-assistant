@@ -19,6 +19,9 @@ public class TakeawayDbContext : DbContext
     public DbSet<OrderStatus> OrderStatuses => Set<OrderStatus>();
     public DbSet<PaymentMethod> PaymentMethods => Set<PaymentMethod>();
     public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<ProductVariant> ProductVariants => Set<ProductVariant>();
+    public DbSet<ProductModifier> ProductModifiers => Set<ProductModifier>();
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -43,6 +46,10 @@ public class TakeawayDbContext : DbContext
                 .WithMany(p => p.OrderItems)
                 .HasForeignKey(oi => oi.ProductId)
                 .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ProductVariant>()
+                .WithMany()
+                .HasForeignKey(oi => oi.ProductVariantId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Product>(entity =>
@@ -55,6 +62,22 @@ public class TakeawayDbContext : DbContext
                 .WithMany(c => c.Products)
                 .HasForeignKey(p => p.CategoryId)
                 .OnDelete(DeleteBehavior.Restrict);
+            entity.HasMany(p => p.Variants)
+                .WithOne(v => v.Product)
+                .HasForeignKey(v => v.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasMany(p => p.Modifiers)
+                .WithOne(m => m.Product)
+                .HasForeignKey(m => m.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AuditLog>(entity =>
+        {
+            entity.HasOne(al => al.Order)
+                .WithMany(o => o.AuditLogs)
+                .HasForeignKey(al => al.OrderId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<Payment>(entity =>
@@ -104,8 +127,10 @@ public class TakeawayDbContext : DbContext
                 Name = "Margherita",
                 Description = "Classic pizza with tomato, mozzarella and basil",
                 Price = 7.50m,
+                VatRate = 0.10m,
                 IsAvailable = true,
-                ImageUrl = null
+                ImageUrl = null,
+                StockQuantity = 100
             },
             new Product
             {
@@ -115,8 +140,10 @@ public class TakeawayDbContext : DbContext
                 Name = "Diavola",
                 Description = "Spicy salami pizza with mozzarella",
                 Price = 8.50m,
+                VatRate = 0.10m,
                 IsAvailable = true,
-                ImageUrl = null
+                ImageUrl = null,
+                StockQuantity = 80
             },
             new Product
             {
@@ -125,9 +152,69 @@ public class TakeawayDbContext : DbContext
                 CategoryId = 2,
                 Name = "Coca-Cola",
                 Description = "Chilled 33cl can",
-                Price = 2.50m,
+                Price = 1.80m,
+                VatRate = 0.22m,
                 IsAvailable = true,
-                ImageUrl = null
+                ImageUrl = null,
+                StockQuantity = 200
+            });
+
+        modelBuilder.Entity<ProductVariant>().HasData(
+            new ProductVariant
+            {
+                Id = 1,
+                ProductId = 1,
+                Name = "Regular",
+                Price = 7.50m,
+                VatRate = 0.10m,
+                IsDefault = true,
+                StockQuantity = 80
+            },
+            new ProductVariant
+            {
+                Id = 2,
+                ProductId = 1,
+                Name = "Large",
+                Price = 9.50m,
+                VatRate = 0.10m,
+                IsDefault = false,
+                StockQuantity = 40
+            },
+            new ProductVariant
+            {
+                Id = 3,
+                ProductId = 2,
+                Name = "Regular",
+                Price = 8.50m,
+                VatRate = 0.10m,
+                IsDefault = true,
+                StockQuantity = 60
+            });
+
+        modelBuilder.Entity<ProductModifier>().HasData(
+            new ProductModifier
+            {
+                Id = 1,
+                ProductId = 1,
+                Name = "Extra Cheese",
+                Price = 1.20m,
+                VatRate = 0.10m
+            },
+            new ProductModifier
+            {
+                Id = 2,
+                ProductId = 1,
+                Name = "Olives",
+                Price = 0.80m,
+                VatRate = 0.10m
+            },
+            new ProductModifier
+            {
+                Id = 3,
+                ProductId = 2,
+                Name = "Extra Spicy",
+                Price = 0.90m,
+                VatRate = 0.10m
             });
 
         modelBuilder.Entity<OrderChannel>().HasData(
