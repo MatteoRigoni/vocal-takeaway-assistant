@@ -6,6 +6,13 @@
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <script>
+    // Configurazione API base URL per Docker
+    // In Docker Compose, l'API è accessibile tramite il proxy Caddy a /api
+    window.__TAKEAWAY_API__ = {
+      baseUrl: '/api'
+    };
+  </script>
 </head>
 <body>
   <app-root></app-root>

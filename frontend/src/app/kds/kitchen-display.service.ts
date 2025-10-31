@@ -80,6 +80,14 @@ export class KitchenDisplayService {
     try {
       const url = this.createUrl('/orders/kds');
       const payload = await firstValueFrom(this.http.get<KdsOrderTicketDto[]>(url));
+      
+      // Validazione aggiuntiva prima di passare a ingestSnapshot
+      if (!payload) {
+        console.warn('refreshTickets: payload is null or undefined');
+        this.ingestSnapshot([]); // Passa array vuoto invece di null/undefined
+        return;
+      }
+      
       this.ingestSnapshot(payload);
       const now = new Date();
       this.lastSyncSignal.set(now);
@@ -87,11 +95,22 @@ export class KitchenDisplayService {
       this.errorSignal.set(null);
     } catch (error) {
       console.error('Unable to refresh kitchen tickets', error);
-      this.errorSignal.set('Unable to refresh tickets. Retrying automatically.');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.errorSignal.set(`Unable to refresh tickets: ${errorMessage}. Retrying automatically.`);
+      
+      // In caso di errore, passa array vuoto per evitare crash
+      this.ingestSnapshot([]);
     }
   }
 
   ingestSnapshot(tickets: KdsOrderTicketDto[]): void {
+    // Validazione: assicurati che tickets sia un array iterabile
+    if (!Array.isArray(tickets)) {
+      console.error('ingestSnapshot: tickets is not an array', tickets);
+      this.errorSignal.set('Invalid response format from server');
+      return;
+    }
+    
     this.ticketMap.clear();
     for (const ticket of tickets) {
       const viewModel = this.toViewModel(ticket);

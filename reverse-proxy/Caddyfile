@@ -4,8 +4,14 @@
 
 :80 {
   # API -> /api e /api/...
+  # handle_path rimuove il prefisso /api prima di inoltrare al backend
+  # Quindi /api/hubs/kds diventa /hubs/kds nel backend
   handle_path /api* {
-    reverse_proxy backend:8080
+    reverse_proxy backend:8080 {
+      # Abilita WebSocket upgrade per SignalR
+      header_up Connection {>Connection}
+      header_up Upgrade {>Upgrade}
+    }
   }
 
   # WEB -> /web e /web/... (SPA)
