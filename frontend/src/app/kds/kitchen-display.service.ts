@@ -20,6 +20,7 @@ export class KitchenDisplayService {
   private readonly nextRefreshSignal = signal<Date | null>(null);
   private readonly connectionSignal = signal<'connecting' | 'connected' | 'disconnected'>('disconnected');
   private readonly errorSignal = signal<string | null>(null);
+  private readonly updatingTickets = signal(new Set<number>());
 
   private readonly readySubject = new Subject<KitchenTicketViewModel>();
 
@@ -119,12 +120,33 @@ export class KitchenDisplayService {
     this.publishTickets();
   }
 
+  async updateTicketStatus(orderId: number, status: KitchenTicketStatus): Promise<boolean> {
+    this.setTicketUpdating(orderId, true);
+
+    try {
+      const url = this.createUrl(`/orders/${orderId}`);
+      await firstValueFrom(this.http.patch(url, { status }));
+      return true;
+    } catch (error) {
+      console.error(`Unable to update order ${orderId} to status ${status}`, error);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      this.errorSignal.set(`Failed to update order ${orderId}: ${message}`);
+      return false;
+    } finally {
+      this.setTicketUpdating(orderId, false);
+    }
+  }
+
   setFilter(filter: TicketFilter): void {
     this.filterSignal.set(filter);
   }
 
   isTicketVisible(ticket: KitchenTicketViewModel, filter: TicketFilter): boolean {
     return this.matchesFilter(ticket.status, filter);
+  }
+
+  isTicketUpdating(orderId: number): boolean {
+    return this.updatingTickets().has(orderId);
   }
 
   private scheduleAutoRefresh(): void {
@@ -273,6 +295,18 @@ export class KitchenDisplayService {
       default:
         return true;
     }
+  }
+
+  private setTicketUpdating(orderId: number, updating: boolean): void {
+    this.updatingTickets.update((current) => {
+      const next = new Set(current);
+      if (updating) {
+        next.add(orderId);
+      } else {
+        next.delete(orderId);
+      }
+      return next;
+    });
   }
 
   private resolveApiBaseUrl(): string {

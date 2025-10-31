@@ -268,6 +268,70 @@
   font-weight: 700;
 }
 
+.ticket__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.ticket-action {
+  flex: 1 1 45%;
+  min-width: 130px;
+  border-radius: 999px;
+  padding: 0.65rem 1rem;
+  border: 1px solid transparent;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: rgba(15, 23, 42, 0.6);
+  color: inherit;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.ticket-action:active {
+  transform: scale(0.97);
+}
+
+.ticket-action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ticket-action--primary {
+  background: rgba(59, 130, 246, 0.25);
+  border-color: rgba(59, 130, 246, 0.6);
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.25);
+}
+
+.ticket-action--primary:hover:not(:disabled),
+.ticket-action--primary:focus-visible:not(:disabled) {
+  border-color: rgba(96, 165, 250, 0.9);
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.35);
+}
+
+.ticket-action--secondary {
+  background: rgba(15, 118, 110, 0.18);
+  border-color: rgba(45, 212, 191, 0.45);
+  box-shadow: 0 8px 18px rgba(13, 148, 136, 0.25);
+}
+
+.ticket-action--secondary:hover:not(:disabled),
+.ticket-action--secondary:focus-visible:not(:disabled) {
+  border-color: rgba(94, 234, 212, 0.85);
+  box-shadow: 0 10px 24px rgba(13, 148, 136, 0.35);
+}
+
+.ticket-action--ghost {
+  background: rgba(71, 85, 105, 0.15);
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
+.ticket-action--ghost:hover:not(:disabled),
+.ticket-action--ghost:focus-visible:not(:disabled) {
+  border-color: rgba(226, 232, 240, 0.6);
+}
+
 .ticket-empty {
   grid-column: 1 / -1;
   background: rgba(15, 23, 42, 0.45);

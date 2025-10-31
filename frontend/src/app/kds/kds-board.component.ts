@@ -7,6 +7,13 @@ import { KitchenTicketStatus, KitchenTicketViewModel, TicketFilter } from './kds
 type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 
 type FilterDefinition = { key: TicketFilter; label: string; description: string };
+type TicketActionVariant = 'primary' | 'secondary' | 'ghost';
+type TicketAction = {
+  status: KitchenTicketStatus;
+  label: string;
+  variant: TicketActionVariant;
+  confirm?: string;
+};
 
 @Component({
   selector: 'app-kds-board',
@@ -33,6 +40,12 @@ export class KdsBoardComponent implements OnInit {
     { key: 'prepping', label: 'Cooking', description: 'Actively being prepared' },
     { key: 'ready', label: 'Ready', description: 'Completed and waiting pickup' },
   ];
+
+  protected readonly actionVariants: Record<TicketActionVariant, string> = {
+    primary: 'ticket-action ticket-action--primary',
+    secondary: 'ticket-action ticket-action--secondary',
+    ghost: 'ticket-action ticket-action--ghost',
+  };
 
   protected readonly now = signal(new Date());
   private readonly connectionSummary: Signal<string> = computed(() =>
@@ -183,6 +196,50 @@ export class KdsBoardComponent implements OnInit {
 
   protected showCustomer(ticket: KitchenTicketViewModel): boolean {
     return Boolean(ticket.customerName || ticket.customerPhone);
+  }
+
+  protected ticketActions(ticket: KitchenTicketViewModel): TicketAction[] {
+    switch (ticket.status) {
+      case 'Received':
+        return [
+          { status: 'InPreparation', label: 'Start prep', variant: 'primary' },
+          { status: 'Ready', label: 'Mark ready', variant: 'secondary' },
+        ];
+      case 'InPreparation':
+        return [
+          { status: 'Ready', label: 'Mark ready', variant: 'primary' },
+          { status: 'Completed', label: 'Complete', variant: 'secondary', confirm: 'Mark order as completed?' },
+        ];
+      case 'Ready':
+        return [
+          { status: 'Completed', label: 'Complete', variant: 'primary', confirm: 'Mark order as completed?' },
+        ];
+      default:
+        return [];
+    }
+  }
+
+  protected actionClass(action: TicketAction): string {
+    return this.actionVariants[action.variant] ?? this.actionVariants.primary;
+  }
+
+  protected isTicketUpdating(ticket: KitchenTicketViewModel): boolean {
+    return this.kitchenDisplay.isTicketUpdating(ticket.orderId);
+  }
+
+  protected async triggerAction(ticket: KitchenTicketViewModel, action: TicketAction): Promise<void> {
+    if (this.isTicketUpdating(ticket)) {
+      return;
+    }
+
+    if (action.confirm && !window.confirm(action.confirm)) {
+      return;
+    }
+
+    const success = await this.kitchenDisplay.updateTicketStatus(ticket.orderId, action.status);
+    if (!success) {
+      console.warn(`Failed to update order ${ticket.orderCode} to ${action.status}`);
+    }
   }
 
   private describeConnection(status: ConnectionStatus): string {
