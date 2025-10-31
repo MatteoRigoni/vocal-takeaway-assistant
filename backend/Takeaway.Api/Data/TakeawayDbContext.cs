@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Takeaway.Api.Domain.Constants;
 using Takeaway.Api.Domain.Entities;
 
 namespace Takeaway.Api.Data;
@@ -224,10 +225,11 @@ public class TakeawayDbContext : DbContext
         );
 
         modelBuilder.Entity<OrderStatus>().HasData(
-            new OrderStatus { Id = 1, Name = "Received", Description = "Order received" },
-            new OrderStatus { Id = 2, Name = "InPreparation", Description = "Order is being prepared" },
-            new OrderStatus { Id = 3, Name = "Completed", Description = "Order completed" },
-            new OrderStatus { Id = 4, Name = "Cancelled", Description = "Order cancelled" }
+            new OrderStatus { Id = 1, Name = OrderStatusCatalog.Received, Description = "Order received" },
+            new OrderStatus { Id = 2, Name = OrderStatusCatalog.InPreparation, Description = "Order is being prepared" },
+            new OrderStatus { Id = 3, Name = OrderStatusCatalog.Ready, Description = "Order ready for pickup" },
+            new OrderStatus { Id = 4, Name = OrderStatusCatalog.Completed, Description = "Order completed" },
+            new OrderStatus { Id = 5, Name = OrderStatusCatalog.Cancelled, Description = "Order cancelled" }
         );
 
         modelBuilder.Entity<PaymentMethod>().HasData(

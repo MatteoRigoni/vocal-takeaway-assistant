@@ -1,9 +1,14 @@
+using System.Collections.Generic;
+using System.Linq;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Scalar.AspNetCore;
 using Takeaway.Api.Data;
+using Takeaway.Api.Domain.Constants;
+using Takeaway.Api.Domain.Entities;
 using Takeaway.Api.Endpoints;
+using Takeaway.Api.Hubs;
 using Takeaway.Api.Options;
 using Takeaway.Api.Services;
 using Takeaway.Api.Validation;
@@ -20,12 +25,16 @@ builder.Services.AddDbContext<TakeawayDbContext>(options =>
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
+builder.Services.AddSignalR();
 builder.Services.AddValidatorsFromAssemblyContaining<CreateOrderRequestValidator>();
 builder.Services.Configure<OrderThrottlingOptions>(builder.Configuration.GetSection(OrderThrottlingOptions.SectionName));
+builder.Services.Configure<OrderCancellationOptions>(builder.Configuration.GetSection(OrderCancellationOptions.SectionName));
 builder.Services.AddScoped<IOrderPricingService, OrderPricingService>();
 builder.Services.AddScoped<IOrderThrottlingService, OrderThrottlingService>();
 builder.Services.AddScoped<IOrderCodeGenerator, OrderCodeGenerator>();
 builder.Services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
+builder.Services.AddSingleton<IOrderStatusNotifier, OrderStatusNotifier>();
+builder.Services.AddSingleton<IOrderCancellationService, OrderCancellationService>();
 
 var app = builder.Build();
 
@@ -40,13 +49,14 @@ using (var scope = app.Services.CreateScope())
     int attempt = 0;
     while (true)
     {
-        try
-        {
-            logger.LogInformation("Applying database migrations (attempt {Attempt}/{Max}).", attempt + 1, maxRetries);
-            dbContext.Database.Migrate();
-            logger.LogInformation("Database migrations applied successfully.");
-            break;
-        }
+            try
+            {
+                logger.LogInformation("Applying database migrations (attempt {Attempt}/{Max}).", attempt + 1, maxRetries);
+                dbContext.Database.Migrate();
+                logger.LogInformation("Database migrations applied successfully.");
+                EnsureReferenceData(dbContext, logger);
+                break;
+            }
         catch (Exception ex)
         {
             attempt++;
@@ -92,7 +102,45 @@ app.MapGet("/health", () => Results.Ok(new { status = "Healthy", service = "api"
 app.MapMenuEndpoints();
 app.MapOrdersEndpoints();
 app.MapCustomerEndpoints();
+app.MapHub<OrderStatusHub>("/hubs/orders");
 
 app.Run();
 
 public partial class Program;
+
+static void EnsureReferenceData(TakeawayDbContext dbContext, ILogger logger)
+{
+    var desiredStatuses = new Dictionary<string, string>
+    {
+        [OrderStatusCatalog.Received] = "Order received",
+        [OrderStatusCatalog.InPreparation] = "Order is being prepared",
+        [OrderStatusCatalog.Ready] = "Order ready for pickup",
+        [OrderStatusCatalog.Completed] = "Order completed",
+        [OrderStatusCatalog.Cancelled] = "Order cancelled"
+    };
+
+    var existing = dbContext.OrderStatuses
+        .AsNoTracking()
+        .ToDictionary(s => s.Name, StringComparer.OrdinalIgnoreCase);
+
+    var added = false;
+
+    foreach (var (name, description) in desiredStatuses)
+    {
+        if (existing.ContainsKey(name))
+            continue;
+
+        dbContext.OrderStatuses.Add(new OrderStatus
+        {
+            Name = name,
+            Description = description
+        });
+        logger.LogInformation("Seeding missing order status {Status}", name);
+        added = true;
+    }
+
+    if (added)
+    {
+        dbContext.SaveChanges();
+    }
+}
