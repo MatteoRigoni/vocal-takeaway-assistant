@@ -17,6 +17,33 @@ namespace Takeaway.Api.Data.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.0");
 
+            modelBuilder.Entity("Takeaway.Api.Domain.Entities.AuditLog", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("OrderId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderId");
+
+                    b.ToTable("AuditLogs");
+                });
+
             modelBuilder.Entity("Takeaway.Api.Domain.Entities.Category", b =>
                 {
                     b.Property<int>("Id")
@@ -515,33 +542,6 @@ namespace Takeaway.Api.Data.Migrations
                         });
                 });
 
-            modelBuilder.Entity("Takeaway.Api.Domain.Entities.AuditLog", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("EventType")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("OrderId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Payload")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrderId");
-
-                    b.ToTable("AuditLogs");
-                });
-
             modelBuilder.Entity("Takeaway.Api.Domain.Entities.Shop", b =>
                 {
                     b.Property<int>("Id")
@@ -586,6 +586,17 @@ namespace Takeaway.Api.Data.Migrations
                             OpeningHours = "Mon-Sun 11:00-23:00",
                             Phone = "+39 055 1234567"
                         });
+                });
+
+            modelBuilder.Entity("Takeaway.Api.Domain.Entities.AuditLog", b =>
+                {
+                    b.HasOne("Takeaway.Api.Domain.Entities.Order", "Order")
+                        .WithMany("AuditLogs")
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Order");
                 });
 
             modelBuilder.Entity("Takeaway.Api.Domain.Entities.Order", b =>
@@ -681,11 +692,7 @@ namespace Takeaway.Api.Data.Migrations
 
                     b.Navigation("Category");
 
-                    b.Navigation("Modifiers");
-
                     b.Navigation("Shop");
-
-                    b.Navigation("Variants");
                 });
 
             modelBuilder.Entity("Takeaway.Api.Domain.Entities.ProductModifier", b =>
@@ -708,17 +715,6 @@ namespace Takeaway.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Product");
-                });
-
-            modelBuilder.Entity("Takeaway.Api.Domain.Entities.AuditLog", b =>
-                {
-                    b.HasOne("Takeaway.Api.Domain.Entities.Order", "Order")
-                        .WithMany("AuditLogs")
-                        .HasForeignKey("OrderId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Order");
                 });
 
             modelBuilder.Entity("Takeaway.Api.Domain.Entities.Category", b =>
