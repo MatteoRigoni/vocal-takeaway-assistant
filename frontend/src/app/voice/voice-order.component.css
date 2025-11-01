@@ -1,0 +1,118 @@
+.voice-shell {
+  display: grid;
+  gap: 1.5rem;
+  padding: 2rem;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, #1f2937, #0f172a);
+  color: #f9fafb;
+  box-shadow: 0 24px 72px rgba(15, 23, 42, 0.45);
+  max-width: 32rem;
+  margin: 2rem auto;
+}
+
+.panel h1 {
+  margin: 0;
+  font-size: 2rem;
+}
+
+.subtitle {
+  margin-top: 0.25rem;
+  opacity: 0.8;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.record-btn {
+  background: #10b981;
+  color: #04121b;
+  border: none;
+  padding: 0.85rem 1.6rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.recording .record-btn {
+  background: #ef4444;
+  color: #fff;
+}
+
+.record-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.record-btn:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 32px rgba(16, 185, 129, 0.35);
+}
+
+.visualizer {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 50%;
+  background: rgba(15, 118, 110, 0.25);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.pulse {
+  width: 70%;
+  height: 70%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.9), rgba(31, 41, 55, 0.2));
+  transition: opacity 0.15s ease;
+}
+
+.status {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.status.recording {
+  color: #f97316;
+}
+
+.status.submitting {
+  color: #38bdf8;
+}
+
+.status.playing {
+  color: #22d3ee;
+}
+
+.error {
+  background: rgba(239, 68, 68, 0.12);
+  border-left: 3px solid #f87171;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+}
+
+.confirmation {
+  background: rgba(34, 197, 94, 0.1);
+  border-left: 3px solid #4ade80;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+}
+
+.transcript {
+  background: rgba(15, 23, 42, 0.5);
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.transcript-text {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  line-height: 1.5;
+  margin: 0.75rem 0 0;
+  color: rgba(226, 232, 240, 0.92);
+}
