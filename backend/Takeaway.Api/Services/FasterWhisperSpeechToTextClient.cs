@@ -49,10 +49,12 @@ public class FasterWhisperSpeechToTextClient : ISpeechToTextClient
 
         buffer.Position = 0;
 
+        _logger.LogInformation("Sending audio data of size {Size} bytes to STT service", buffer.Length);
+
         using var content = new MultipartFormDataContent();
         var streamContent = new StreamContent(buffer);
         streamContent.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
-        content.Add(streamContent, "audio_file", "audio.wav");
+        content.Add(streamContent, "file", "audio.wav");
 
         using var response = await _httpClient.PostAsync("v1/audio/transcriptions", content, cancellationToken);
         var statusCode = response.StatusCode;
@@ -64,11 +66,17 @@ public class FasterWhisperSpeechToTextClient : ISpeechToTextClient
         }
 
         await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        var responseContent = await new StreamReader(responseStream).ReadToEndAsync();
+        _logger.LogInformation("Received STT response: {Response}", responseContent);
+        
+        responseStream.Position = 0;
         var payload = await JsonSerializer.DeserializeAsync<FasterWhisperResponse>(responseStream, SerializerOptions, cancellationToken);
         if (payload?.Text is null)
         {
             throw new SpeechClientException("Speech-to-text response did not contain transcribed text.", statusCode);
         }
+        
+        _logger.LogInformation("Successfully transcribed text: {Text}", payload.Text);
 
         return new SpeechRecognitionResult(payload.Text);
     }

@@ -13,8 +13,8 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: "Development"
       ASPNETCORE_URLS: "http://+:8080"
-      STT__BaseUrl: "http://stt:8000"
-      TTS__BaseUrl: "http://tts:5000"
+      SpeechServices__SpeechToTextBaseUrl: "http://stt:8000"
+      SpeechServices__TextToSpeechBaseUrl: "http://tts:5000"
     volumes:
       - ./data:/app/data
     expose:

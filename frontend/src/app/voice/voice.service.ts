@@ -36,6 +36,7 @@ export class VoiceService {
   }
 
   requestSynthesis(text: string): Observable<Blob> {
+    console.log('[VoiceService] Richiesta sintesi per il testo:', text);
     return this.http
       .post<VoiceSessionResponse>(this.voiceSessionEndpoint, {
         audioChunks: [],
@@ -43,13 +44,33 @@ export class VoiceService {
         voice: null,
       })
       .pipe(
+        tap((response) => {
+          console.log('[VoiceService] Risposta sessione voce:', response);
+          if (response && response.responseAudioChunks) {
+            response.responseAudioChunks.forEach((chunk, idx) => {
+              const anteprima = chunk ? chunk.substring(0, 60) + '...' : '(vuoto/null)';
+              let decoded = '';
+              try {
+                decoded = atob(chunk);
+              } catch { decoded = '(errore decodifica base64)'; }
+              console.log(`[VoiceService] Chunk audio[${idx}] base64:`, anteprima);
+              // Provare a stampare come testo umano  
+              console.log(`[VoiceService] Chunk audio[${idx}] decodificato:`, decoded.substring(0, 120));
+            });
+          }
+        }),
         map((response) => this.decodeAudioChunks(response?.responseAudioChunks ?? [])),
-        tap((blob) => this.synthesizedAudioSubject.next(blob))
+        tap((blob) => {
+          console.log('[VoiceService] Blob audio sintetizzato:', blob);
+          this.synthesizedAudioSubject.next(blob);
+        })
       );
   }
 
   async playAudio(blob: Blob): Promise<void> {
+    console.log('[VoiceService] playAudio: ricevo blob da riprodurre:', blob);
     const arrayBuffer = await blob.arrayBuffer();
+    console.log('[VoiceService] ArrayBuffer byteLength:', arrayBuffer.byteLength);
     this.audioContext ??= new AudioContext();
     const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer.slice(0));
     const source = this.audioContext.createBufferSource();

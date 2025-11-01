@@ -69,9 +69,10 @@ public static class VoiceEndpoints
                 var responseAudio = new List<string>();
                 if (!string.IsNullOrWhiteSpace(request.ResponseText))
                 {
+
                     try
                     {
-                        await foreach (var chunk in textToSpeechClient.SynthesizeAsync(new TextToSpeechRequest(request.ResponseText!, request.Voice), cancellationToken))
+                        await foreach (var chunk in textToSpeechClient.SynthesizeAsync(new TextToSpeechRequest("Hai ordinato pizza margherita. Corretto?"!, null), cancellationToken))
                         {
                             responseAudio.Add(Convert.ToBase64String(chunk));
                         }

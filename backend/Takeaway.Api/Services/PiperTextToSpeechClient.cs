@@ -15,6 +15,8 @@ public class PiperTextToSpeechClient : ITextToSpeechClient
     {
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
     };
+    
+    private const string DefaultVoice = "it_IT-paola-medium";
 
     private readonly HttpClient _httpClient;
     private readonly ILogger<PiperTextToSpeechClient> _logger;
@@ -34,11 +36,21 @@ public class PiperTextToSpeechClient : ITextToSpeechClient
             throw new SpeechClientException("Text-to-speech service endpoint is not configured.");
         }
 
-        var payload = JsonSerializer.Serialize(new { text = request.Text, voice = request.Voice }, SerializerOptions);
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "v1/audio/speech")
+        _logger.LogInformation("Requesting TTS for text: {Text} with voice: {Voice}", request.Text, request.Voice ?? "default");
+
+        var voice = request.Voice ?? DefaultVoice;
+        // Il servizio Piper si aspetta solo il campo 'text'
+        var payload = JsonSerializer.Serialize(new { text = request.Text }, SerializerOptions);
+
+        _logger.LogDebug("TTS request payload: {Payload}", payload);
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, string.Empty)
         {
-            Content = new StringContent(payload, Encoding.UTF8, "application/json")
+            Content = new StringContent(request.Text, Encoding.UTF8, "text/plain")
         };
+        
+        // Aggiungiamo l'header Accept per specificare che vogliamo audio WAV
+        httpRequest.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("audio/wav"));
 
         using var response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         var statusCode = response.StatusCode;
@@ -46,8 +58,16 @@ public class PiperTextToSpeechClient : ITextToSpeechClient
         {
             var error = await response.Content.ReadAsStringAsync(cancellationToken);
             _logger.LogWarning("Text-to-speech call failed with status {Status}: {Body}", statusCode, error);
+            
+            if (statusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                _logger.LogError("TTS endpoint not found. Make sure Piper is running and the endpoint is correct");
+            }
+            
             throw new SpeechClientException("Text-to-speech request failed.", statusCode, error);
         }
+        
+        _logger.LogInformation("Successfully received TTS response with status {Status}", statusCode);
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         var buffer = ArrayPool<byte>.Shared.Rent(81920);
