@@ -7,10 +7,12 @@ using FluentValidation;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Takeaway.Api.Contracts.Voice;
 using Takeaway.Api.Extensions;
 using Takeaway.Api.Services;
 using Takeaway.Api.Validation;
+using Takeaway.Api.VoiceDialog;
 
 namespace Takeaway.Api.Endpoints;
 
@@ -26,9 +28,14 @@ public static class VoiceEndpoints
                 IValidator<VoiceSessionRequest> validator,
                 ISpeechToTextClient speechToTextClient,
                 ITextToSpeechClient textToSpeechClient,
+                IVoiceDialogSessionStore sessionStore,
+                IVoiceDialogStateMachine stateMachine,
+                ILoggerFactory loggerFactory,
                 CancellationToken cancellationToken
             ) =>
             {
+                var logger = loggerFactory.CreateLogger("VoiceSession");
+
                 var validationResult = await validator.ValidateAsync(request, cancellationToken);
                 if (!validationResult.IsValid)
                 {
@@ -49,12 +56,13 @@ public static class VoiceEndpoints
                     }));
                 }
 
-                SpeechRecognitionResult transcription = new(string.Empty);
+                var recognizedText = request.UtteranceText?.Trim() ?? string.Empty;
                 if (audio.Count > 0)
                 {
                     try
                     {
-                        transcription = await speechToTextClient.TranscribeAsync(ToStream(audio), cancellationToken);
+                        var transcription = await speechToTextClient.TranscribeAsync(ToStream(audio), cancellationToken);
+                        recognizedText = transcription.Text;
                     }
                     catch (SpeechClientException ex)
                     {
@@ -66,13 +74,42 @@ public static class VoiceEndpoints
                     }
                 }
 
-                var responseAudio = new List<string>();
-                if (!string.IsNullOrWhiteSpace(request.ResponseText))
+                var session = await sessionStore.GetOrCreateAsync(request.CallerId, cancellationToken);
+                VoiceDialogResult dialogResult;
+                try
                 {
+                    dialogResult = await stateMachine.HandleAsync(
+                        session,
+                        new VoiceDialogEvent(VoiceDialogEventType.Utterance, recognizedText),
+                        cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Dialog state machine failed for session {SessionId}.", session.Id);
+                    var prompt = "Something went wrong while processing your request. Please try again.";
+                    return TypedResults.Ok(new VoiceSessionResponse(
+                        recognizedText,
+                        Array.Empty<string>(),
+                        prompt,
+                        VoiceDialogState.Error.ToString(),
+                        true,
+                        new Dictionary<string, string> { ["error"] = "dialog-failure" }
+                    ));
+                }
 
+                await sessionStore.SaveAsync(session, cancellationToken);
+
+                if (dialogResult.IsSessionComplete)
+                {
+                    await sessionStore.ClearAsync(session.Id, cancellationToken);
+                }
+
+                var responseAudio = new List<string>();
+                if (!string.IsNullOrWhiteSpace(dialogResult.PromptText))
+                {
                     try
                     {
-                        await foreach (var chunk in textToSpeechClient.SynthesizeAsync(new TextToSpeechRequest("Hai ordinato pizza margherita. Corretto?"!, null), cancellationToken))
+                        await foreach (var chunk in textToSpeechClient.SynthesizeAsync(new TextToSpeechRequest(dialogResult.PromptText, request.Voice), cancellationToken))
                         {
                             responseAudio.Add(Convert.ToBase64String(chunk));
                         }
@@ -87,10 +124,17 @@ public static class VoiceEndpoints
                     }
                 }
 
-                return TypedResults.Ok(new VoiceSessionResponse(transcription.Text, responseAudio));
+                return TypedResults.Ok(new VoiceSessionResponse(
+                    recognizedText,
+                    responseAudio,
+                    dialogResult.PromptText,
+                    dialogResult.State.ToString(),
+                    dialogResult.IsSessionComplete,
+                    dialogResult.Metadata
+                ));
             })
         .WithName("CreateVoiceSession")
-        .WithSummary("Transcribe incoming audio and optionally synthesize a response.");
+        .WithSummary("Transcribe incoming audio, orchestrate the dialog flow, and synthesize the response.");
 
         return app;
     }

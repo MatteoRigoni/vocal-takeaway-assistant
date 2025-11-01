@@ -1,4 +1,3 @@
-using System;
 using System.Linq;
 using FluentValidation;
 using Takeaway.Api.Contracts.Voice;
@@ -9,10 +8,14 @@ public class VoiceSessionRequestValidator : AbstractValidator<VoiceSessionReques
 {
     public VoiceSessionRequestValidator()
     {
+        RuleFor(x => x.CallerId)
+            .NotEmpty()
+            .MaximumLength(100);
+
         RuleFor(x => x.AudioChunks)
-            .NotNull()
-            .When(x => string.IsNullOrWhiteSpace(x.ResponseText))
-            .WithMessage("Audio chunks must not be null when no response text is provided.");
+            .NotEmpty()
+            .When(x => string.IsNullOrWhiteSpace(x.UtteranceText))
+            .WithMessage("Provide audio chunks when no utterance text is supplied.");
 
         RuleForEach(x => x.AudioChunks)
             .NotEmpty()
@@ -20,17 +23,17 @@ public class VoiceSessionRequestValidator : AbstractValidator<VoiceSessionReques
             .WithMessage("Individual audio chunks must not be empty.");
 
         RuleFor(x => x)
-            .Must(HasAudioOrResponseText)
-            .WithMessage("Provide at least one audio chunk or a response text.");
+            .Must(HasAudioOrText)
+            .WithMessage("Provide either audio chunks or an utterance text.");
 
-        RuleFor(x => x.ResponseText)
+        RuleFor(x => x.UtteranceText)
             .MaximumLength(2000);
 
         RuleFor(x => x.Voice)
             .MaximumLength(100);
     }
 
-    private static bool HasAudioOrResponseText(VoiceSessionRequest request)
+    private static bool HasAudioOrText(VoiceSessionRequest request)
     {
         var hasAudio = request.AudioChunks is { Count: > 0 } &&
                        request.AudioChunks.Any(chunk => !string.IsNullOrWhiteSpace(chunk));
@@ -40,6 +43,6 @@ public class VoiceSessionRequestValidator : AbstractValidator<VoiceSessionReques
             return true;
         }
 
-        return !string.IsNullOrWhiteSpace(request.ResponseText);
+        return !string.IsNullOrWhiteSpace(request.UtteranceText);
     }
 }
