@@ -38,15 +38,15 @@ public class PiperTextToSpeechClient : ITextToSpeechClient
 
         _logger.LogInformation("Requesting TTS for text: {Text} with voice: {Voice}", request.Text, request.Voice ?? "default");
 
-        var voice = request.Voice ?? DefaultVoice;
-        // Il servizio Piper si aspetta solo il campo 'text'
-        var payload = JsonSerializer.Serialize(new { text = request.Text }, SerializerOptions);
-
+        var voice = string.IsNullOrWhiteSpace(request.Voice) || request.Voice.Trim().ToLower() == "default"
+            ? "en_US_amy"
+            : request.Voice;
+        // Invia sia text sia voice a Piper
+        var payload = JsonSerializer.Serialize(new { text = request.Text, voice = voice }, SerializerOptions);
         _logger.LogDebug("TTS request payload: {Payload}", payload);
-
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, string.Empty)
         {
-            Content = new StringContent(request.Text, Encoding.UTF8, "text/plain")
+            Content = new StringContent(payload, Encoding.UTF8, "application/json")
         };
         
         // Aggiungiamo l'header Accept per specificare che vogliamo audio WAV

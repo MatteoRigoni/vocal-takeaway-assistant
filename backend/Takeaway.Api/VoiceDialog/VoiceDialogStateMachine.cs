@@ -110,7 +110,7 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         {
             session.Context.Metadata[IntentMetadataKeys.LastLabel] = intentLabel;
 
-            if (dialogEvent.Metadata?.TryGetValue(IntentMetadataKeys.Confidence, out var confidenceValue))
+            if (dialogEvent.Metadata?.TryGetValue(IntentMetadataKeys.Confidence, out var confidenceValue) == true)
             {
                 session.Context.Metadata[IntentMetadataKeys.Confidence] = confidenceValue;
             }
@@ -135,6 +135,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             _ => "Are you still there?"
         };
 
+        // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+        Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{prompt}'");
         session.Context.LastPrompt = prompt;
         return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
     }
@@ -150,6 +152,9 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         }
 
         var prompt = session.Context.LastPrompt ?? "How can I help you with your takeaway order today?";
+        // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+        Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{prompt}'");
+        session.Context.LastPrompt = prompt;
         return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
     }
 
@@ -158,6 +163,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         if (session.State is VoiceDialogState.Completed or VoiceDialogState.Cancelled)
         {
             var prompt = "This session is already finished. Say \"start\" if you need to begin again.";
+            // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+            Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{prompt}'");
             session.Context.LastPrompt = prompt;
             return new VoiceDialogResult(session.State, prompt, true, session.Context.Metadata);
         }
@@ -165,6 +172,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         if (string.IsNullOrWhiteSpace(normalized))
         {
             var prompt = "I didn\'t catch that. Could you repeat it?";
+            // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+            Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{prompt}'");
             session.Context.LastPrompt = prompt;
             return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
         }
@@ -194,6 +203,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         {
             session.TransitionTo(VoiceDialogState.CheckingStatus);
             var prompt = "Sure, what order code should I check for you?";
+            // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+            Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{prompt}'");
             session.Context.LastPrompt = prompt;
             return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
         }
@@ -202,6 +213,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         {
             session.TransitionTo(VoiceDialogState.Cancelling);
             var prompt = "I can cancel an order. What\'s the order code?";
+            // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+            Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{prompt}'");
             session.Context.LastPrompt = prompt;
             return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
         }
@@ -210,6 +223,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         {
             session.TransitionTo(VoiceDialogState.Modifying);
             var prompt = "Tell me what needs to change in your order.";
+            // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+            Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{prompt}'");
             session.Context.LastPrompt = prompt;
             return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
         }
@@ -218,6 +233,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         {
             session.TransitionTo(VoiceDialogState.Ordering);
             var greetingPrompt = "Hi there! What would you like to order today?";
+            // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+            Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{greetingPrompt}'");
             session.Context.LastPrompt = greetingPrompt;
             return new VoiceDialogResult(session.State, greetingPrompt, false, session.Context.Metadata);
         }
@@ -226,6 +243,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         var orderingPrompt = session.Context.RequestedItems.Count == 0
             ? "Welcome back! What would you like to order today?"
             : "What else can I add to your order?";
+        // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+        Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{orderingPrompt}'");
         session.Context.LastPrompt = orderingPrompt;
         return new VoiceDialogResult(session.State, orderingPrompt, false, session.Context.Metadata);
     }
@@ -236,6 +255,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         {
             session.TransitionTo(VoiceDialogState.CheckingStatus);
             var statusPrompt = "Sure, what order code should I look up?";
+            // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+            Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{statusPrompt}'");
             session.Context.LastPrompt = statusPrompt;
             return new VoiceDialogResult(session.State, statusPrompt, false, session.Context.Metadata);
         }
@@ -244,6 +265,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         {
             session.TransitionTo(VoiceDialogState.Cancelling);
             var cancelPrompt = "Okay, let\'s cancel an order. What\'s the code?";
+            // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+            Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{cancelPrompt}'");
             session.Context.LastPrompt = cancelPrompt;
             return new VoiceDialogResult(session.State, cancelPrompt, false, session.Context.Metadata);
         }
@@ -252,6 +275,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         {
             session.TransitionTo(VoiceDialogState.Modifying);
             var modifyPrompt = "Tell me what to change in the order.";
+            // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+            Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{modifyPrompt}'");
             session.Context.LastPrompt = modifyPrompt;
             return new VoiceDialogResult(session.State, modifyPrompt, false, session.Context.Metadata);
         }
@@ -263,6 +288,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             var summary = string.Join(", ", session.Context.RequestedItems);
             var confirmPrompt = $"You\'ve asked for {summary}. Should I place the order?";
             session.Context.Metadata["order.items"] = summary;
+            // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+            Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{confirmPrompt}'");
             session.Context.LastPrompt = confirmPrompt;
             return new VoiceDialogResult(session.State, confirmPrompt, false, session.Context.Metadata);
         }
@@ -271,6 +298,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             && session.Context.RequestedItems.Count == 0)
         {
             var prompt = "No problem. Let me know when you\'re ready to order.";
+            // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+            Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{prompt}'");
             session.Context.LastPrompt = prompt;
             return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
         }
@@ -282,6 +311,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         }
 
         var nextPrompt = "Anything else for the order?";
+        // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+        Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{nextPrompt}'");
         session.Context.LastPrompt = nextPrompt;
         return new VoiceDialogResult(session.State, nextPrompt, false, session.Context.Metadata);
     }
@@ -292,6 +323,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         {
             session.TransitionTo(VoiceDialogState.Cancelling);
             var prompt = "Understood. What order code should I cancel?";
+            // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+            Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{prompt}'");
             session.Context.LastPrompt = prompt;
             return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
         }
@@ -300,6 +333,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         {
             session.TransitionTo(VoiceDialogState.CheckingStatus);
             var prompt = "Sure, what order code should I check?";
+            // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+            Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{prompt}'");
             session.Context.LastPrompt = prompt;
             return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
         }
@@ -311,6 +346,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             var summary = string.Join(", ", session.Context.RequestedItems);
             var confirmPrompt = $"Your order now has {summary}. Shall I finalize it?";
             session.Context.Metadata["order.items"] = summary;
+            // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+            Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{confirmPrompt}'");
             session.Context.LastPrompt = confirmPrompt;
             return new VoiceDialogResult(session.State, confirmPrompt, false, session.Context.Metadata);
         }
@@ -321,6 +358,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         }
 
         var nextPrompt = "Anything else you\'d like to change?";
+        // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+        Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{nextPrompt}'");
         session.Context.LastPrompt = nextPrompt;
         return new VoiceDialogResult(session.State, nextPrompt, false, session.Context.Metadata);
     }
@@ -331,6 +370,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         {
             session.TransitionTo(VoiceDialogState.CheckingStatus);
             var prompt = "Okay, what order code would you like me to check?";
+            // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+            Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{prompt}'");
             session.Context.LastPrompt = prompt;
             return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
         }
@@ -341,6 +382,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             session.Context.Metadata["order.code"] = code;
             var prompt = $"I found order {code}. Do you want me to cancel it now?";
             session.TransitionTo(VoiceDialogState.Confirming);
+            // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+            Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{prompt}'");
             session.Context.LastPrompt = prompt;
             return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
         }
@@ -350,6 +393,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         {
             session.TransitionTo(VoiceDialogState.Cancelled);
             var prompt = $"Done. Order {session.Context.OrderCode} has been cancelled.";
+            // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+            Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{prompt}'");
             session.Context.LastPrompt = prompt;
             return new VoiceDialogResult(session.State, prompt, true, session.Context.Metadata);
         }
@@ -358,11 +403,15 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         {
             session.TransitionTo(VoiceDialogState.Ordering);
             var prompt = "No worries. What else can I help you with?";
+            // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+            Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{prompt}'");
             session.Context.LastPrompt = prompt;
             return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
         }
 
         var retryPrompt = "Could you share the order code you want to cancel?";
+        // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+        Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{retryPrompt}'");
         session.Context.LastPrompt = retryPrompt;
         return new VoiceDialogResult(session.State, retryPrompt, false, session.Context.Metadata);
     }
@@ -373,6 +422,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         {
             session.TransitionTo(VoiceDialogState.Cancelling);
             var prompt = "Okay, I can cancel it. What order code is it?";
+            // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+            Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{prompt}'");
             session.Context.LastPrompt = prompt;
             return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
         }
@@ -383,6 +434,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             session.Context.Metadata["order.code"] = code;
             session.TransitionTo(VoiceDialogState.CheckingStatus);
             var prompt = $"Order {code} is currently being prepared. Anything else you need?";
+            // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+            Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{prompt}'");
             session.Context.LastPrompt = prompt;
             return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
         }
@@ -392,6 +445,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         {
             var prompt = $"Order {session.Context.OrderCode} is ready for pickup.";
             session.TransitionTo(VoiceDialogState.Completed);
+            // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+            Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{prompt}'");
             session.Context.LastPrompt = prompt;
             return new VoiceDialogResult(session.State, prompt, true, session.Context.Metadata);
         }
@@ -400,11 +455,15 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         {
             session.TransitionTo(VoiceDialogState.Ordering);
             var prompt = "Alright. Do you want to place a new order?";
+            // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+            Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{prompt}'");
             session.Context.LastPrompt = prompt;
             return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
         }
 
         var askPrompt = "Please provide the order code so I can look it up.";
+        // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+        Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{askPrompt}'");
         session.Context.LastPrompt = askPrompt;
         return new VoiceDialogResult(session.State, askPrompt, false, session.Context.Metadata);
     }
@@ -417,6 +476,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             {
                 session.TransitionTo(VoiceDialogState.Cancelled);
                 var prompt2 = $"Done. Order {code} is cancelled.";
+                // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+                Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{prompt2}'");
                 session.Context.LastPrompt = prompt2;
                 return new VoiceDialogResult(session.State, prompt2, true, session.Context.Metadata);
             }
@@ -426,6 +487,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             session.Context.OrderCode = orderCode;
             session.Context.Metadata["order.code"] = orderCode;
             var prompt = $"Your order is confirmed. The pickup code is {orderCode}.";
+            // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+            Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{prompt}'");
             session.Context.LastPrompt = prompt;
             return new VoiceDialogResult(session.State, prompt, true, session.Context.Metadata);
         }
@@ -434,11 +497,15 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         {
             session.TransitionTo(VoiceDialogState.Ordering);
             var prompt = "No problem. What should we adjust?";
+            // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+            Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{prompt}'");
             session.Context.LastPrompt = prompt;
             return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
         }
 
         var neutralPrompt = "Just to confirm, should I go ahead?";
+        // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+        Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{neutralPrompt}'");
         session.Context.LastPrompt = neutralPrompt;
         return new VoiceDialogResult(session.State, neutralPrompt, false, session.Context.Metadata);
     }
@@ -447,6 +514,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
     {
         session.TransitionTo(VoiceDialogState.Error);
         var prompt = "I\'m not sure how to handle that. Let\'s start over. What do you need help with?";
+        // LOG: tracciamo ogni nuovo prompt generato dal dialogo
+        Console.WriteLine($"[VoiceDialogStateMachine] Returning prompt (state: {session.State}): '{prompt}'");
         session.Context.LastPrompt = prompt;
         return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
     }

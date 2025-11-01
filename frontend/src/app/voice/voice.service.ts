@@ -28,6 +28,7 @@ export class VoiceService {
           audioChunks,
           responseText: null,
           voice: null,
+          CallerId: 'TestUser',
         })
       ),
       map((response) => response?.recognizedText ?? ''),
@@ -41,7 +42,9 @@ export class VoiceService {
       .post<VoiceSessionResponse>(this.voiceSessionEndpoint, {
         audioChunks: [],
         responseText: text,
+        utteranceText: text, // <-- AGGIUNTO campo obbligatorio per validazione
         voice: null,
+        CallerId: 'TestUser',
       })
       .pipe(
         tap((response) => {
