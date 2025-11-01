@@ -7,7 +7,7 @@ using Takeaway.Api.Data;
 
 #nullable disable
 
-namespace Takeaway.Api.Data.Migrations
+namespace Takeaway.Api.Migrations
 {
     [DbContext(typeof(TakeawayDbContext))]
     partial class TakeawayDbContextModelSnapshot : ModelSnapshot
