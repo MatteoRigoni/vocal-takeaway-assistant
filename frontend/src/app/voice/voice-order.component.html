@@ -1,0 +1,39 @@
+<section class="voice-shell" [ngClass]="status()">
+  <header class="panel">
+    <h1>Voice Ordering Assistant</h1>
+    <p class="subtitle">Capture orders hands-free and review the live transcript.</p>
+  </header>
+
+  <div class="controls">
+    <button
+      type="button"
+      class="record-btn"
+      [disabled]="status() === 'submitting'"
+      (click)="toggleRecording()"
+    >
+      <span *ngIf="status() !== 'recording'; else recordingLabel">Start Recording</span>
+    </button>
+    <ng-template #recordingLabel>Stop Recording</ng-template>
+
+    <div class="visualizer">
+      <div class="pulse" [style.opacity]="0.2 + recordingLevel() * 0.8"></div>
+    </div>
+  </div>
+
+  <p class="status" [ngClass]="status()">
+    <ng-container [ngSwitch]="status()">
+      <span *ngSwitchCase="'recording'">Listening for your order…</span>
+      <span *ngSwitchCase="'submitting'">Sending audio to the kitchen…</span>
+      <span *ngSwitchCase="'playing'">Playing confirmation prompt…</span>
+      <span *ngSwitchDefault>Tap to begin recording.</span>
+    </ng-container>
+  </p>
+
+  <p class="error" *ngIf="errorMessage() as error">{{ error }}</p>
+  <p class="confirmation" *ngIf="confirmationMessage() as confirmation">{{ confirmation }}</p>
+
+  <section class="transcript">
+    <h2>Live Transcript</h2>
+    <p class="transcript-text">{{ (recognizedText | async) || 'Waiting for speech…' }}</p>
+  </section>
+</section>

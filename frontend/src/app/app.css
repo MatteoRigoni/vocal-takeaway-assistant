@@ -5,3 +5,30 @@
 .app-shell {
   min-height: 100vh;
 }
+
+.app-nav {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem 2rem;
+  background: #111827;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.35);
+}
+
+.app-nav a {
+  color: #d1d5db;
+  text-decoration: none;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  transition: color 0.2s ease, background 0.2s ease;
+}
+
+.app-nav a:hover {
+  color: #f9fafb;
+}
+
+.app-nav a.active {
+  color: #0f172a;
+  background: #34d399;
+}
