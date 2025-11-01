@@ -30,6 +30,14 @@
     reverse_proxy backend:8080
   }
 
+  handle_path /stt* {
+    reverse_proxy stt:9090
+  }
+
+  handle_path /tts* {
+    reverse_proxy tts:5000
+  }
+
   # Root "/" -> redirect a /web
   handle / {
     redir /web 302

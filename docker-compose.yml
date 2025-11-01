@@ -7,9 +7,14 @@ services:
       context: ./backend/Takeaway.Api
       dockerfile: Dockerfile
     container_name: voiceai-backend
+    depends_on:
+      - stt
+      - tts
     environment:
       ASPNETCORE_ENVIRONMENT: "Development"
       ASPNETCORE_URLS: "http://+:8080"
+      STT__BaseUrl: "http://stt:9090"
+      TTS__BaseUrl: "http://tts:5000"
     volumes:
       - ./data:/app/data
     expose:
@@ -19,6 +24,28 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+
+  stt:
+    image: ghcr.io/rhasspy/asr-faster-whisper:latest
+    container_name: voiceai-stt
+    environment:
+      HTTP_PORT: "9090"
+      WHISPER_MODEL: "base"
+    ports:
+      - "9090:9090"
+    volumes:
+      - stt-models:/data
+
+  tts:
+    image: ghcr.io/rhasspy/tts-piper:latest
+    container_name: voiceai-tts
+    environment:
+      HTTP_PORT: "5000"
+      VOICE: "en_US-amy-medium"
+    ports:
+      - "5000:5000"
+    volumes:
+      - tts-voices:/data
 
   web:
     build:
@@ -51,3 +78,7 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+
+volumes:
+  stt-models:
+  tts-voices:
