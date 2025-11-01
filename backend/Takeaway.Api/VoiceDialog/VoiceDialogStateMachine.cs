@@ -385,9 +385,9 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             if (session.Context.Metadata.TryGetValue("order.code", out var code) && !string.IsNullOrWhiteSpace(code))
             {
                 session.TransitionTo(VoiceDialogState.Cancelled);
-                var prompt = $"Done. Order {code} is cancelled.";
-                session.Context.LastPrompt = prompt;
-                return new VoiceDialogResult(session.State, prompt, true, session.Context.Metadata);
+                var prompt2 = $"Done. Order {code} is cancelled.";
+                session.Context.LastPrompt = prompt2;
+                return new VoiceDialogResult(session.State, prompt2, true, session.Context.Metadata);
             }
 
             session.TransitionTo(VoiceDialogState.Completed);
