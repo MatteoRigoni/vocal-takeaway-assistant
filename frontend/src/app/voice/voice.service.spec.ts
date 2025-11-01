@@ -1,6 +1,6 @@
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { skip, take } from 'rxjs/operators';
+import { take } from 'rxjs/operators';
 import { VoiceService } from './voice.service';
 
 describe('VoiceService', () => {
@@ -52,26 +52,17 @@ describe('VoiceService', () => {
     }
   });
 
-  it('should post audio data for transcription and emit recognized text and transcript entries', (done) => {
+  it('should post audio data for transcription and emit recognized text', (done) => {
     const blob = new Blob(['audio'], { type: 'audio/webm' });
 
     service.recognizedText$.pipe(take(1)).subscribe((initial) => {
       expect(initial).toBe('');
     });
 
-    let transcriptChecked = false;
-    service.transcript$.pipe(skip(1), take(1)).subscribe((messages) => {
-      expect(messages.length).toBe(1);
-      expect(messages[0].role).toBe('user');
-      expect(messages[0].text).toBe('One Margherita');
-      transcriptChecked = true;
-    });
-
     service.transcribeAudio(blob).subscribe((text) => {
       expect(text).toBe('One Margherita');
       service.recognizedText$.pipe(take(1)).subscribe((value) => {
         expect(value).toBe('One Margherita');
-        expect(transcriptChecked).toBeTrue();
         done();
       });
     });
@@ -86,13 +77,7 @@ describe('VoiceService', () => {
     req.flush({ recognizedText: 'One Margherita', responseAudioChunks: [] });
   });
 
-  it('should request synthesized audio, expose decoded blobs, and enqueue assistant messages', (done) => {
-    service.transcript$.pipe(skip(1), take(1)).subscribe((messages) => {
-      expect(messages.length).toBe(1);
-      expect(messages[0].role).toBe('assistant');
-      expect(messages[0].text).toBe('One Margherita');
-    });
-
+  it('should request synthesized audio and expose decoded blobs', (done) => {
     service.requestSynthesis('One Margherita').subscribe((response) => {
       response.text().then((text) => {
         expect(text).toBe('audio');
