@@ -58,6 +58,48 @@ public class KitchenDisplayTests : IAsyncLifetime
         var ticket = await completion.Task;
         Assert.Equal(createResponse.OrderId, ticket.OrderId);
         Assert.Equal(OrderStatusCatalog.Received, ticket.Status);
+        Assert.Equal(DateTimeKind.Utc, ticket.CreatedAtUtc.Kind);
+        Assert.Equal(DateTimeKind.Utc, ticket.PickupAtUtc.Kind);
+    }
+
+    [Fact]
+    public async Task UpdateOrderStatus_NotifiesKitchenBoard()
+    {
+        var order = await CreateOrderAsync(CreateSampleOrder(DateTime.UtcNow.AddMinutes(20)));
+
+        var updateCompletion = new TaskCompletionSource<KdsOrderTicketDto>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var updateSubscription = _connection.On<KdsOrderTicketDto>("TicketUpdated", dto =>
+        {
+            if (dto.OrderId == order.OrderId)
+            {
+                updateCompletion.TrySetResult(dto);
+            }
+        });
+
+        var patchResponse = await _client.PatchAsJsonAsync($"/orders/{order.OrderId}", new { Status = OrderStatusCatalog.InPreparation });
+        patchResponse.EnsureSuccessStatusCode();
+
+        var updateFinished = await Task.WhenAny(updateCompletion.Task, Task.Delay(TimeSpan.FromSeconds(1)));
+        Assert.Same(updateCompletion.Task, updateFinished);
+        var updatedTicket = await updateCompletion.Task;
+        Assert.Equal(OrderStatusCatalog.InPreparation, updatedTicket.Status);
+
+        var removalCompletion = new TaskCompletionSource<TicketRemovedPayload>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var removalSubscription = _connection.On<TicketRemovedPayload>("TicketRemoved", payload =>
+        {
+            if (payload.OrderId == order.OrderId)
+            {
+                removalCompletion.TrySetResult(payload);
+            }
+        });
+
+        var completeResponse = await _client.PatchAsJsonAsync($"/orders/{order.OrderId}", new { Status = OrderStatusCatalog.Completed });
+        completeResponse.EnsureSuccessStatusCode();
+
+        var removalFinished = await Task.WhenAny(removalCompletion.Task, Task.Delay(TimeSpan.FromSeconds(1)));
+        Assert.Same(removalCompletion.Task, removalFinished);
+        var removed = await removalCompletion.Task;
+        Assert.Equal(order.OrderId, removed.OrderId);
     }
 
     [Fact]
@@ -111,6 +153,8 @@ public class KitchenDisplayTests : IAsyncLifetime
         Assert.Equal(createResponse.OrderId, ticket.OrderId);
         Assert.Equal(OrderStatusCatalog.Received, ticket.Status);
         Assert.NotEmpty(ticket.Items);
+        Assert.Equal(DateTimeKind.Utc, ticket.CreatedAtUtc.Kind);
+        Assert.Equal(DateTimeKind.Utc, ticket.PickupAtUtc.Kind);
     }
 
     private async Task<CreateOrderResponse> CreateOrderAsync(CreateOrderRequest request)

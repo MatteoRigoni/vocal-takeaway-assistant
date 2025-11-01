@@ -268,8 +268,8 @@ export class KitchenDisplayService {
       orderId: ticket.orderId,
       orderCode: ticket.orderCode,
       status: ticket.status,
-      createdAtUtc: new Date(ticket.createdAtUtc),
-      pickupAtUtc: new Date(ticket.pickupAtUtc),
+      createdAtUtc: this.parseUtcDate(ticket.createdAtUtc),
+      pickupAtUtc: this.parseUtcDate(ticket.pickupAtUtc),
       customerName: ticket.customerName,
       customerPhone: ticket.customerPhone,
       notes: ticket.notes,
@@ -323,5 +323,22 @@ export class KitchenDisplayService {
     }
 
     return `${this.apiBase}${normalized}`;
+  }
+
+  private parseUtcDate(value: string): Date {
+    const trimmed = value?.trim();
+    if (!trimmed) {
+      return new Date(NaN);
+    }
+
+    const hasZone = /([zZ]|[+-]\d{2}:?\d{2})$/.test(trimmed);
+    const candidate = hasZone ? trimmed : `${trimmed}Z`;
+    const parsed = new Date(candidate);
+
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+
+    return new Date(trimmed);
   }
 }

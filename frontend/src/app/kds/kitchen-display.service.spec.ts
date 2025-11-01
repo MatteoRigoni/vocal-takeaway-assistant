@@ -49,6 +49,27 @@ describe('KitchenDisplayService', () => {
     expect(service.tickets().length).toBe(1);
   });
 
+  it('normalizes naive timestamps as UTC', () => {
+    const naiveTimestamp = '2025-05-13T21:15:00';
+    const dto: KdsOrderTicketDto = {
+      orderId: 77,
+      orderCode: 'N077',
+      status: 'Received',
+      createdAtUtc: naiveTimestamp,
+      pickupAtUtc: naiveTimestamp,
+      customerName: null,
+      customerPhone: null,
+      notes: null,
+      totalAmount: 12,
+      items: [],
+    };
+
+    service.ingestSnapshot([dto]);
+    const ticket = service.allTickets()[0];
+    expect(ticket.createdAtUtc.toISOString()).toBe(new Date(`${naiveTimestamp}Z`).toISOString());
+    expect(ticket.pickupAtUtc.toISOString()).toBe(new Date(`${naiveTimestamp}Z`).toISOString());
+  });
+
   it('applies filters to the active view', () => {
     const dto: KdsOrderTicketDto = {
       orderId: 1,
