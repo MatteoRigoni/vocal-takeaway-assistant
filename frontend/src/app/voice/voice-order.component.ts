@@ -1,4 +1,4 @@
-import { AsyncPipe, NgClass, NgIf, NgSwitch, NgSwitchCase, NgSwitchDefault } from '@angular/common';
+import { AsyncPipe, NgClass, NgFor, NgIf, NgSwitch, NgSwitchCase, NgSwitchDefault } from '@angular/common';
 import { Component, OnDestroy, signal } from '@angular/core';
 import { Subscription, firstValueFrom } from 'rxjs';
 import { VoiceService } from './voice.service';
@@ -6,7 +6,7 @@ import { VoiceService } from './voice.service';
 @Component({
   selector: 'app-voice-order',
   standalone: true,
-  imports: [AsyncPipe, NgClass, NgIf, NgSwitch, NgSwitchCase, NgSwitchDefault],
+  imports: [AsyncPipe, NgClass, NgFor, NgIf, NgSwitch, NgSwitchCase, NgSwitchDefault],
   templateUrl: './voice-order.component.html',
   styleUrl: './voice-order.component.css',
 })
@@ -17,6 +17,10 @@ export class VoiceOrderComponent implements OnDestroy {
   readonly confirmationMessage = signal<string | null>(null);
   get recognizedText() {
     return this.voiceService.recognizedText$;
+  }
+
+  get transcript() {
+    return this.voiceService.transcript$;
   }
 
   private mediaRecorder?: MediaRecorder;
@@ -159,13 +163,15 @@ export class VoiceOrderComponent implements OnDestroy {
     this.status.set('submitting');
     try {
       const transcript = await firstValueFrom(this.voiceService.transcribeAudio(blob));
-      this.confirmationMessage.set(`Heard: ${transcript}`);
       if (transcript) {
+        this.confirmationMessage.set(`Heard: ${transcript}`);
         const response = `Messaggio ricevuto: ${transcript}.`;
         const ttsBlob = await firstValueFrom(this.voiceService.requestSynthesis(response));
         this.status.set('playing');
         await this.voiceService.playAudio(ttsBlob);
         this.confirmationMessage.set('Ready to confirm your order?');
+      } else {
+        this.confirmationMessage.set(null);
       }
     } catch (error) {
       this.errorMessage.set('We could not reach the speech service. Please try again.');

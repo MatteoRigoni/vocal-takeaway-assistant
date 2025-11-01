@@ -2,6 +2,12 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, ReplaySubject, from, map, switchMap, tap } from 'rxjs';
 
+export interface VoiceTranscriptMessage {
+  role: 'user' | 'assistant';
+  text: string;
+  timestamp: number;
+}
+
 interface VoiceSessionResponse {
   recognizedText: string;
   responseAudioChunks: string[];
@@ -13,6 +19,9 @@ export class VoiceService {
 
   private readonly recognizedTextSubject = new BehaviorSubject<string>('');
   readonly recognizedText$ = this.recognizedTextSubject.asObservable();
+
+  private readonly transcriptSubject = new BehaviorSubject<VoiceTranscriptMessage[]>([]);
+  readonly transcript$ = this.transcriptSubject.asObservable();
 
   private readonly synthesizedAudioSubject = new ReplaySubject<Blob>(1);
   readonly synthesizedAudio$ = this.synthesizedAudioSubject.asObservable();
@@ -31,12 +40,17 @@ export class VoiceService {
           CallerId: 'TestUser',
         })
       ),
-      map((response) => response?.recognizedText ?? ''),
-      tap((text) => this.recognizedTextSubject.next(text))
+      tap((response) => {
+        const text = response?.recognizedText?.trim() ?? '';
+        this.recognizedTextSubject.next(text);
+        this.appendTranscriptMessage('user', text);
+      }),
+      map((response) => response?.recognizedText ?? '')
     );
   }
 
   requestSynthesis(text: string): Observable<Blob> {
+    this.appendTranscriptMessage('assistant', text);
     console.log('[VoiceService] Richiesta sintesi per il testo:', text);
     return this.http
       .post<VoiceSessionResponse>(this.voiceSessionEndpoint, {
@@ -91,6 +105,25 @@ export class VoiceService {
 
   disconnectStream(): void {
     // No streaming hub is currently available; method retained for API compatibility.
+  }
+
+  resetTranscript(): void {
+    this.transcriptSubject.next([]);
+  }
+
+  private appendTranscriptMessage(role: VoiceTranscriptMessage['role'], text: string | null | undefined): void {
+    const trimmed = text?.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const message: VoiceTranscriptMessage = {
+      role,
+      text: trimmed,
+      timestamp: Date.now(),
+    };
+    const next = [...this.transcriptSubject.value, message];
+    this.transcriptSubject.next(next);
   }
 
   private async encodeAudioBlob(blob: Blob, chunkSize = 16384): Promise<string[]> {
