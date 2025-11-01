@@ -34,17 +34,26 @@ describe('VoiceOrderComponent', () => {
   beforeEach(async () => {
     voiceService = jasmine.createSpyObj<VoiceService>('VoiceService', [
       'transcribeAudio',
-      'requestSynthesis',
       'playAudio',
       'connectToVoiceStream',
       'disconnectStream',
+      'createAudioBlob',
     ], {
       recognizedText$: of('One Margherita'),
       transcriptEntries$: of([]),
     });
 
-    voiceService.transcribeAudio.and.returnValue(of('One Margherita'));
-    voiceService.requestSynthesis.and.returnValue(of(new Blob(['audio'], { type: 'audio/wav' })));
+    voiceService.transcribeAudio.and.returnValue(
+      of({
+        recognizedText: 'One Margherita',
+        responseAudioChunks: ['YXVkaW8='],
+        promptText: 'Please confirm your order.',
+        dialogState: 'Confirming',
+        isSessionComplete: false,
+        metadata: null,
+      })
+    );
+    voiceService.createAudioBlob.and.returnValue(new Blob(['audio'], { type: 'audio/wav' }));
     voiceService.playAudio.and.returnValue(Promise.resolve());
     voiceService.connectToVoiceStream.and.returnValue(of('One Margherita'));
 
@@ -98,7 +107,7 @@ describe('VoiceOrderComponent', () => {
     flushMicrotasks();
 
     expect(voiceService.transcribeAudio).toHaveBeenCalled();
-    expect(voiceService.requestSynthesis).toHaveBeenCalledWith('One Margherita');
+    expect(voiceService.createAudioBlob).toHaveBeenCalledWith(['YXVkaW8=']);
     expect(voiceService.playAudio).toHaveBeenCalled();
   }));
 
