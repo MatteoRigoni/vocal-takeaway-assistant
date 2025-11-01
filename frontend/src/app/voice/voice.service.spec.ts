@@ -52,55 +52,51 @@ describe('VoiceService', () => {
     }
   });
 
-  it('should post audio data for transcription and emit recognized text', (done) => {
+  it('should post audio data, update slots, and emit audio blobs', (done) => {
     const blob = new Blob(['audio'], { type: 'audio/webm' });
 
     service.recognizedText$.pipe(take(1)).subscribe((initial) => {
       expect(initial).toBe('');
     });
 
-    service.transcribeAudio(blob).subscribe((text) => {
-      expect(text).toBe('One Margherita');
+    service.processAudio(blob).subscribe(({ response, audio }) => {
+      expect(response.recognizedText).toBe('One Margherita');
+      expect(response.promptText).toBe('Any toppings?');
+      expect(audio.type).toBe('audio/wav');
+
       service.recognizedText$.pipe(take(1)).subscribe((value) => {
         expect(value).toBe('One Margherita');
+      });
+
+      service.slots$.pipe(take(1)).subscribe((slots) => {
+        expect(slots?.product.name).toBe('Margherita');
+        expect(slots?.quantity.quantity).toBe(2);
         done();
       });
     });
 
     const req = httpMock.expectOne('/api/voice/session');
     expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({
-      audioChunks: ['YXVkaW8='],
-      responseText: null,
-      voice: null,
-    });
-    req.flush({ recognizedText: 'One Margherita', responseAudioChunks: [] });
-  });
+    expect(req.request.body.audioChunks).toEqual(['YXVkaW8=']);
+    expect(req.request.body.utteranceText).toBeNull();
+    expect(req.request.body.voice).toBeNull();
+    expect(req.request.body.callerId).toMatch(/^web-/);
 
-  it('should request synthesized audio and expose decoded blobs', (done) => {
-    service.requestSynthesis('One Margherita').subscribe((response) => {
-      response.text().then((text) => {
-        expect(text).toBe('audio');
-        expect(response.type).toBe('audio/wav');
-
-        service.synthesizedAudio$.pipe(take(1)).subscribe((emitted) => {
-          emitted.text().then((emittedText) => {
-            expect(emittedText).toBe('audio');
-            expect(emitted.type).toBe('audio/wav');
-            done();
-          });
-        });
-      });
+    req.flush({
+      recognizedText: 'One Margherita',
+      responseAudioChunks: ['YXVkaW8='],
+      promptText: 'Any toppings?',
+      dialogState: 'Ordering',
+      isSessionComplete: false,
+      slots: {
+        product: { productId: 1, name: 'Margherita', isFilled: true },
+        variant: { variantId: null, name: null, productId: null, isFilled: false },
+        quantity: { quantity: 2, isFilled: true },
+        modifiers: { selections: [], isFilled: false, isExplicitNone: false },
+        pickupTime: { value: null, isFilled: false },
+      },
+      metadata: {},
     });
-
-    const req = httpMock.expectOne('/api/voice/session');
-    expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({
-      audioChunks: [],
-      responseText: 'One Margherita',
-      voice: null,
-    });
-    req.flush({ recognizedText: '', responseAudioChunks: ['YXVkaW8='] });
   });
 
   it('should playback audio blobs via the Web Audio API', async () => {

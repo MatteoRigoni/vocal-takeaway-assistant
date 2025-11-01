@@ -2,10 +2,15 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
+using Takeaway.Api.Data;
+using Takeaway.Api.Services;
 using Takeaway.Api.VoiceDialog.IntentClassification;
+using Takeaway.Api.VoiceDialog.Slots;
 
 namespace Takeaway.Api.VoiceDialog;
 
@@ -35,7 +40,8 @@ public sealed record VoiceDialogResult(
     VoiceDialogState State,
     string PromptText,
     bool IsSessionComplete,
-    IReadOnlyDictionary<string, string>? Metadata
+    IReadOnlyDictionary<string, string>? Metadata,
+    VoiceOrderSlotsSnapshot Slots
 );
 
 public sealed class VoiceDialogContext
@@ -47,6 +53,8 @@ public sealed class VoiceDialogContext
     public string? LastPrompt { get; set; }
 
     public string? LastUtterance { get; set; }
+
+    public VoiceOrderSlots Slots { get; } = new();
 
     public Dictionary<string, string> Metadata { get; } = new(StringComparer.OrdinalIgnoreCase);
 }
@@ -91,10 +99,43 @@ public interface IVoiceDialogStateMachine
 public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
 {
     private static readonly Regex OrderCodeRegex = new("(?<code>[A-Za-z]{2,}-?\\d{2,})", RegexOptions.Compiled);
+    private static readonly Regex QuantityRegex = new("\\b(\\d{1,2})\\b", RegexOptions.Compiled);
+    private static readonly Dictionary<string, int> QuantityWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["a"] = 1,
+        ["an"] = 1,
+        ["one"] = 1,
+        ["two"] = 2,
+        ["three"] = 3,
+        ["four"] = 4,
+        ["five"] = 5,
+        ["six"] = 6,
+        ["seven"] = 7,
+        ["eight"] = 8,
+        ["nine"] = 9,
+        ["ten"] = 10
+    };
+    private static readonly char[] TokenSeparators = { ' ', ',', '.', '!', '?', ';', ':', '\'', '"' };
+    private readonly TakeawayDbContext _dbContext;
+    private readonly IDateTimeProvider _dateTimeProvider;
+
+    private const string SlotProductIdKey = "slot.product.id";
+    private const string SlotProductNameKey = "slot.product.name";
+    private const string SlotVariantIdKey = "slot.variant.id";
+    private const string SlotVariantNameKey = "slot.variant.name";
+    private const string SlotQuantityKey = "slot.quantity";
+    private const string SlotModifiersKey = "slot.modifiers";
+    private const string SlotPickupTimeKey = "slot.pickup";
+
+    public VoiceDialogStateMachine(TakeawayDbContext dbContext, IDateTimeProvider dateTimeProvider)
+    {
+        _dbContext = dbContext;
+        _dateTimeProvider = dateTimeProvider;
+    }
 
     public VoiceDialogState InitialState => VoiceDialogState.Start;
 
-    public Task<VoiceDialogResult> HandleAsync(VoiceDialogSession session, VoiceDialogEvent dialogEvent, CancellationToken cancellationToken)
+    public async Task<VoiceDialogResult> HandleAsync(VoiceDialogSession session, VoiceDialogEvent dialogEvent, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(dialogEvent);
@@ -116,12 +157,12 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             }
         }
 
-        return Task.FromResult(dialogEvent.Type switch
+        return dialogEvent.Type switch
         {
             VoiceDialogEventType.Timeout => HandleTimeout(session),
             VoiceDialogEventType.System => HandleSystemEvent(session, dialogEvent.Metadata),
-            _ => HandleUtterance(session, normalized, utterance, intentLabel)
-        });
+            _ => await HandleUtteranceAsync(session, normalized, utterance, intentLabel, cancellationToken)
+        };
     }
 
     private static VoiceDialogResult HandleTimeout(VoiceDialogSession session)
@@ -135,8 +176,7 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             _ => "Are you still there?"
         };
 
-        session.Context.LastPrompt = prompt;
-        return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
+        return BuildResult(session, prompt, false);
     }
 
     private static VoiceDialogResult HandleSystemEvent(VoiceDialogSession session, IReadOnlyDictionary<string, string>? metadata)
@@ -150,23 +190,21 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         }
 
         var prompt = session.Context.LastPrompt ?? "How can I help you with your takeaway order today?";
-        return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
+        return BuildResult(session, prompt, false);
     }
 
-    private static VoiceDialogResult HandleUtterance(VoiceDialogSession session, string normalized, string utterance, string? intentLabel)
+    private async Task<VoiceDialogResult> HandleUtteranceAsync(VoiceDialogSession session, string normalized, string utterance, string? intentLabel, CancellationToken cancellationToken)
     {
         if (session.State is VoiceDialogState.Completed or VoiceDialogState.Cancelled)
         {
             var prompt = "This session is already finished. Say \"start\" if you need to begin again.";
-            session.Context.LastPrompt = prompt;
-            return new VoiceDialogResult(session.State, prompt, true, session.Context.Metadata);
+            return BuildResult(session, prompt, true);
         }
 
         if (string.IsNullOrWhiteSpace(normalized))
         {
             var prompt = "I didn\'t catch that. Could you repeat it?";
-            session.Context.LastPrompt = prompt;
-            return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
+            return BuildResult(session, prompt, false);
         }
 
         if (IntentMatches(intentLabel, IntentLabels.Fallback))
@@ -177,7 +215,7 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         return session.State switch
         {
             VoiceDialogState.Start => HandleStart(session, normalized, intentLabel),
-            VoiceDialogState.Ordering => HandleOrdering(session, normalized, utterance, intentLabel),
+            VoiceDialogState.Ordering => await HandleOrderingAsync(session, normalized, utterance, intentLabel, cancellationToken),
             VoiceDialogState.Modifying => HandleModifying(session, normalized, utterance, intentLabel),
             VoiceDialogState.Cancelling => HandleCancelling(session, normalized, utterance, intentLabel),
             VoiceDialogState.CheckingStatus => HandleCheckingStatus(session, normalized, utterance, intentLabel),
@@ -194,96 +232,120 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         {
             session.TransitionTo(VoiceDialogState.CheckingStatus);
             var prompt = "Sure, what order code should I check for you?";
-            session.Context.LastPrompt = prompt;
-            return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
+            return BuildResult(session, prompt, false);
         }
 
         if (IntentMatches(intentLabel, IntentLabels.CancelOrder) || ContainsAny(normalized, "cancel"))
         {
             session.TransitionTo(VoiceDialogState.Cancelling);
             var prompt = "I can cancel an order. What\'s the order code?";
-            session.Context.LastPrompt = prompt;
-            return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
+            return BuildResult(session, prompt, false);
         }
 
         if (IntentMatches(intentLabel, IntentLabels.ModifyOrder) || ContainsAny(normalized, "modify", "change", "swap", "edit"))
         {
             session.TransitionTo(VoiceDialogState.Modifying);
             var prompt = "Tell me what needs to change in your order.";
-            session.Context.LastPrompt = prompt;
-            return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
+            return BuildResult(session, prompt, false);
         }
 
         if (IntentMatches(intentLabel, IntentLabels.Greeting))
         {
             session.TransitionTo(VoiceDialogState.Ordering);
             var greetingPrompt = "Hi there! What would you like to order today?";
-            session.Context.LastPrompt = greetingPrompt;
-            return new VoiceDialogResult(session.State, greetingPrompt, false, session.Context.Metadata);
+            return BuildResult(session, greetingPrompt, false);
         }
 
         session.TransitionTo(VoiceDialogState.Ordering);
         var orderingPrompt = session.Context.RequestedItems.Count == 0
             ? "Welcome back! What would you like to order today?"
             : "What else can I add to your order?";
-        session.Context.LastPrompt = orderingPrompt;
-        return new VoiceDialogResult(session.State, orderingPrompt, false, session.Context.Metadata);
+        return BuildResult(session, orderingPrompt, false);
     }
 
-    private static VoiceDialogResult HandleOrdering(VoiceDialogSession session, string normalized, string utterance, string? intentLabel)
+    private async Task<VoiceDialogResult> HandleOrderingAsync(VoiceDialogSession session, string normalized, string utterance, string? intentLabel, CancellationToken cancellationToken)
     {
         if (IntentMatches(intentLabel, IntentLabels.CheckStatus) || ContainsAny(normalized, "status"))
         {
             session.TransitionTo(VoiceDialogState.CheckingStatus);
             var statusPrompt = "Sure, what order code should I look up?";
-            session.Context.LastPrompt = statusPrompt;
-            return new VoiceDialogResult(session.State, statusPrompt, false, session.Context.Metadata);
+            return BuildResult(session, statusPrompt, false);
         }
 
         if (IntentMatches(intentLabel, IntentLabels.CancelOrder) || ContainsAny(normalized, "cancel"))
         {
             session.TransitionTo(VoiceDialogState.Cancelling);
             var cancelPrompt = "Okay, let\'s cancel an order. What\'s the code?";
-            session.Context.LastPrompt = cancelPrompt;
-            return new VoiceDialogResult(session.State, cancelPrompt, false, session.Context.Metadata);
+            return BuildResult(session, cancelPrompt, false);
         }
 
         if (IntentMatches(intentLabel, IntentLabels.ModifyOrder) || ContainsAny(normalized, "change", "modify", "swap"))
         {
             session.TransitionTo(VoiceDialogState.Modifying);
             var modifyPrompt = "Tell me what to change in the order.";
-            session.Context.LastPrompt = modifyPrompt;
-            return new VoiceDialogResult(session.State, modifyPrompt, false, session.Context.Metadata);
+            return BuildResult(session, modifyPrompt, false);
         }
 
-        if ((IntentMatches(intentLabel, IntentLabels.CompleteOrder) || IsOrderCompletionCue(normalized))
-            && session.Context.RequestedItems.Count > 0)
+        var menu = await LoadMenuSnapshotAsync(cancellationToken);
+        ApplyUtteranceToSlots(session, utterance, normalized, intentLabel, menu);
+
+        var slots = session.Context.Slots;
+
+        if (slots.Product.Selection is null)
         {
-            session.TransitionTo(VoiceDialogState.Confirming);
-            var summary = string.Join(", ", session.Context.RequestedItems);
-            var confirmPrompt = $"You\'ve asked for {summary}. Should I place the order?";
-            session.Context.Metadata["order.items"] = summary;
-            session.Context.LastPrompt = confirmPrompt;
-            return new VoiceDialogResult(session.State, confirmPrompt, false, session.Context.Metadata);
+            var suggestions = menu.GetTopProductNames(3).ToList();
+            var prompt = suggestions.Count > 0
+                ? $"What would you like to order? Popular choices are {string.Join(", ", suggestions)}."
+                : "What would you like to order from the menu?";
+            return BuildResult(session, prompt, false);
         }
 
-        if ((IntentMatches(intentLabel, IntentLabels.Negate) || ContainsNegation(normalized))
-            && session.Context.RequestedItems.Count == 0)
+        if (!menu.TryGetProduct(slots.Product.Selection.ProductId, out var product))
         {
-            var prompt = "No problem. Let me know when you\'re ready to order.";
-            session.Context.LastPrompt = prompt;
-            return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
+            slots.ClearProduct();
+            var prompt = "I couldn\'t find that product on the menu. Could you choose something else?";
+            return BuildResult(session, prompt, false);
         }
 
-        if (!string.IsNullOrWhiteSpace(utterance)
-            && (intentLabel is null || IntentMatches(intentLabel, IntentLabels.AddItem, IntentLabels.StartOrder)))
+        EnsureDefaultVariant(slots, product);
+
+        if (product.Variants.Count > 1)
         {
-            session.Context.RequestedItems.Add(CleanItemDescription(utterance));
+            if (slots.Variant.Selection is not { } variant || variant.ProductId != product.Id)
+            {
+                var options = string.Join(", ", product.Variants.Select(v => v.Name));
+                var prompt = $"Which variant of {product.Name} would you like? Options are {options}.";
+                return BuildResult(session, prompt, false);
+            }
         }
 
-        var nextPrompt = "Anything else for the order?";
-        session.Context.LastPrompt = nextPrompt;
-        return new VoiceDialogResult(session.State, nextPrompt, false, session.Context.Metadata);
+        if (!slots.Quantity.Value.HasValue)
+        {
+            var prompt = $"How many {product.Name} should I prepare?";
+            return BuildResult(session, prompt, false);
+        }
+
+        if (product.Modifiers.Count > 0 && !slots.Modifiers.IsFilled)
+        {
+            var options = string.Join(", ", product.Modifiers.Select(m => m.Name));
+            var prompt = $"Would you like any modifiers for {product.Name}? Available: {options}.";
+            return BuildResult(session, prompt, false);
+        }
+
+        if (!slots.PickupTime.IsFilled)
+        {
+            var prompt = "When should it be ready for pickup?";
+            return BuildResult(session, prompt, false);
+        }
+
+        var summary = BuildOrderSummary(slots, product);
+        session.TransitionTo(VoiceDialogState.Confirming);
+        session.Context.Metadata["order.items"] = summary;
+        session.Context.RequestedItems.Clear();
+        session.Context.RequestedItems.Add(summary);
+
+        var confirmPrompt = $"Great, {summary}. Shall I place the order?";
+        return BuildResult(session, confirmPrompt, false);
     }
 
     private static VoiceDialogResult HandleModifying(VoiceDialogSession session, string normalized, string utterance, string? intentLabel)
@@ -292,16 +354,14 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         {
             session.TransitionTo(VoiceDialogState.Cancelling);
             var prompt = "Understood. What order code should I cancel?";
-            session.Context.LastPrompt = prompt;
-            return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
+            return BuildResult(session, prompt, false);
         }
 
         if (IntentMatches(intentLabel, IntentLabels.CheckStatus) || ContainsAny(normalized, "status"))
         {
             session.TransitionTo(VoiceDialogState.CheckingStatus);
             var prompt = "Sure, what order code should I check?";
-            session.Context.LastPrompt = prompt;
-            return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
+            return BuildResult(session, prompt, false);
         }
 
         if ((IntentMatches(intentLabel, IntentLabels.CompleteOrder) || IsOrderCompletionCue(normalized))
@@ -311,8 +371,7 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             var summary = string.Join(", ", session.Context.RequestedItems);
             var confirmPrompt = $"Your order now has {summary}. Shall I finalize it?";
             session.Context.Metadata["order.items"] = summary;
-            session.Context.LastPrompt = confirmPrompt;
-            return new VoiceDialogResult(session.State, confirmPrompt, false, session.Context.Metadata);
+            return BuildResult(session, confirmPrompt, false);
         }
 
         if (!string.IsNullOrWhiteSpace(utterance))
@@ -321,8 +380,7 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         }
 
         var nextPrompt = "Anything else you\'d like to change?";
-        session.Context.LastPrompt = nextPrompt;
-        return new VoiceDialogResult(session.State, nextPrompt, false, session.Context.Metadata);
+        return BuildResult(session, nextPrompt, false);
     }
 
     private static VoiceDialogResult HandleCancelling(VoiceDialogSession session, string normalized, string utterance, string? intentLabel)
@@ -331,8 +389,7 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         {
             session.TransitionTo(VoiceDialogState.CheckingStatus);
             var prompt = "Okay, what order code would you like me to check?";
-            session.Context.LastPrompt = prompt;
-            return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
+            return BuildResult(session, prompt, false);
         }
 
         if (TryExtractOrderCode(utterance, out var code))
@@ -341,8 +398,7 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             session.Context.Metadata["order.code"] = code;
             var prompt = $"I found order {code}. Do you want me to cancel it now?";
             session.TransitionTo(VoiceDialogState.Confirming);
-            session.Context.LastPrompt = prompt;
-            return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
+            return BuildResult(session, prompt, false);
         }
 
         if ((IntentMatches(intentLabel, IntentLabels.Affirm) || ContainsAffirmation(normalized))
@@ -350,21 +406,18 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         {
             session.TransitionTo(VoiceDialogState.Cancelled);
             var prompt = $"Done. Order {session.Context.OrderCode} has been cancelled.";
-            session.Context.LastPrompt = prompt;
-            return new VoiceDialogResult(session.State, prompt, true, session.Context.Metadata);
+            return BuildResult(session, prompt, true);
         }
 
         if (IntentMatches(intentLabel, IntentLabels.Negate) || ContainsNegation(normalized))
         {
             session.TransitionTo(VoiceDialogState.Ordering);
             var prompt = "No worries. What else can I help you with?";
-            session.Context.LastPrompt = prompt;
-            return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
+            return BuildResult(session, prompt, false);
         }
 
         var retryPrompt = "Could you share the order code you want to cancel?";
-        session.Context.LastPrompt = retryPrompt;
-        return new VoiceDialogResult(session.State, retryPrompt, false, session.Context.Metadata);
+        return BuildResult(session, retryPrompt, false);
     }
 
     private static VoiceDialogResult HandleCheckingStatus(VoiceDialogSession session, string normalized, string utterance, string? intentLabel)
@@ -373,8 +426,7 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         {
             session.TransitionTo(VoiceDialogState.Cancelling);
             var prompt = "Okay, I can cancel it. What order code is it?";
-            session.Context.LastPrompt = prompt;
-            return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
+            return BuildResult(session, prompt, false);
         }
 
         if (TryExtractOrderCode(utterance, out var code))
@@ -383,8 +435,7 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             session.Context.Metadata["order.code"] = code;
             session.TransitionTo(VoiceDialogState.CheckingStatus);
             var prompt = $"Order {code} is currently being prepared. Anything else you need?";
-            session.Context.LastPrompt = prompt;
-            return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
+            return BuildResult(session, prompt, false);
         }
 
         if ((IntentMatches(intentLabel, IntentLabels.Affirm) || ContainsAffirmation(normalized))
@@ -392,21 +443,18 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         {
             var prompt = $"Order {session.Context.OrderCode} is ready for pickup.";
             session.TransitionTo(VoiceDialogState.Completed);
-            session.Context.LastPrompt = prompt;
-            return new VoiceDialogResult(session.State, prompt, true, session.Context.Metadata);
+            return BuildResult(session, prompt, true);
         }
 
         if (IntentMatches(intentLabel, IntentLabels.Negate) || ContainsNegation(normalized))
         {
             session.TransitionTo(VoiceDialogState.Ordering);
             var prompt = "Alright. Do you want to place a new order?";
-            session.Context.LastPrompt = prompt;
-            return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
+            return BuildResult(session, prompt, false);
         }
 
         var askPrompt = "Please provide the order code so I can look it up.";
-        session.Context.LastPrompt = askPrompt;
-        return new VoiceDialogResult(session.State, askPrompt, false, session.Context.Metadata);
+        return BuildResult(session, askPrompt, false);
     }
 
     private static VoiceDialogResult HandleConfirming(VoiceDialogSession session, string normalized, string? intentLabel)
@@ -417,8 +465,7 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             {
                 session.TransitionTo(VoiceDialogState.Cancelled);
                 var prompt2 = $"Done. Order {code} is cancelled.";
-                session.Context.LastPrompt = prompt2;
-                return new VoiceDialogResult(session.State, prompt2, true, session.Context.Metadata);
+                return BuildResult(session, prompt2, true);
             }
 
             session.TransitionTo(VoiceDialogState.Completed);
@@ -426,29 +473,412 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             session.Context.OrderCode = orderCode;
             session.Context.Metadata["order.code"] = orderCode;
             var prompt = $"Your order is confirmed. The pickup code is {orderCode}.";
-            session.Context.LastPrompt = prompt;
-            return new VoiceDialogResult(session.State, prompt, true, session.Context.Metadata);
+            return BuildResult(session, prompt, true);
         }
 
         if (IntentMatches(intentLabel, IntentLabels.Negate) || ContainsNegation(normalized))
         {
             session.TransitionTo(VoiceDialogState.Ordering);
             var prompt = "No problem. What should we adjust?";
-            session.Context.LastPrompt = prompt;
-            return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
+            return BuildResult(session, prompt, false);
         }
 
         var neutralPrompt = "Just to confirm, should I go ahead?";
-        session.Context.LastPrompt = neutralPrompt;
-        return new VoiceDialogResult(session.State, neutralPrompt, false, session.Context.Metadata);
+        return BuildResult(session, neutralPrompt, false);
     }
 
     private static VoiceDialogResult HandleFallback(VoiceDialogSession session)
     {
         session.TransitionTo(VoiceDialogState.Error);
         var prompt = "I\'m not sure how to handle that. Let\'s start over. What do you need help with?";
+        return BuildResult(session, prompt, false);
+    }
+
+    private static VoiceDialogResult BuildResult(VoiceDialogSession session, string prompt, bool isComplete)
+    {
         session.Context.LastPrompt = prompt;
-        return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
+        UpdateSlotMetadata(session);
+        return new VoiceDialogResult(session.State, prompt, isComplete, session.Context.Metadata, session.Context.Slots.ToSnapshot());
+    }
+
+    private static void UpdateSlotMetadata(VoiceDialogSession session)
+    {
+        var metadata = session.Context.Metadata;
+        var slots = session.Context.Slots;
+
+        if (slots.Product.Selection is { } product)
+        {
+            metadata[SlotProductIdKey] = product.ProductId.ToString(CultureInfo.InvariantCulture);
+            metadata[SlotProductNameKey] = product.Name;
+        }
+        else
+        {
+            metadata.Remove(SlotProductIdKey);
+            metadata.Remove(SlotProductNameKey);
+        }
+
+        if (slots.Variant.Selection is { } variant)
+        {
+            metadata[SlotVariantIdKey] = variant.VariantId.ToString(CultureInfo.InvariantCulture);
+            metadata[SlotVariantNameKey] = variant.Name;
+        }
+        else
+        {
+            metadata.Remove(SlotVariantIdKey);
+            metadata.Remove(SlotVariantNameKey);
+        }
+
+        if (slots.Quantity.Value is int quantity)
+        {
+            metadata[SlotQuantityKey] = quantity.ToString(CultureInfo.InvariantCulture);
+        }
+        else
+        {
+            metadata.Remove(SlotQuantityKey);
+        }
+
+        if (slots.Modifiers.IsFilled)
+        {
+            metadata[SlotModifiersKey] = slots.Modifiers.IsExplicitNone
+                ? "(none)"
+                : string.Join(",", slots.Modifiers.Selections.Select(m => m.Name));
+        }
+        else
+        {
+            metadata.Remove(SlotModifiersKey);
+        }
+
+        if (slots.PickupTime.Value is DateTimeOffset pickup)
+        {
+            metadata[SlotPickupTimeKey] = pickup.ToString("o", CultureInfo.InvariantCulture);
+        }
+        else
+        {
+            metadata.Remove(SlotPickupTimeKey);
+        }
+    }
+
+    private void ApplyUtteranceToSlots(VoiceDialogSession session, string utterance, string normalized, string? intentLabel, MenuSnapshot menu)
+    {
+        var slots = session.Context.Slots;
+        var normalizedCompact = NormalizeForLookup(utterance);
+
+        if (menu.TryMatchProduct(utterance, normalizedCompact, out var matchedProduct))
+        {
+            slots.SetProduct(new ProductSelection(matchedProduct.Id, matchedProduct.Name));
+        }
+
+        if (slots.Product.Selection is null)
+        {
+            return;
+        }
+
+        if (!menu.TryGetProduct(slots.Product.Selection.ProductId, out var product))
+        {
+            return;
+        }
+
+        if (product.Variants.Count > 1 && TryMatchVariant(utterance, normalizedCompact, product, out var variant))
+        {
+            slots.SetVariant(new VariantSelection(variant.Id, variant.Name, product.Id));
+        }
+
+        if (TryParseQuantity(utterance, out var quantity) && SlotValidation.IsValidQuantity(quantity))
+        {
+            slots.SetQuantity(quantity);
+        }
+
+        if (product.Modifiers.Count == 0)
+        {
+            slots.MarkNoModifiers();
+        }
+        else
+        {
+            var selectedModifiers = product.Modifiers
+                .Where(m => ContainsPhrase(utterance, m.Name) || normalizedCompact.Contains(m.NormalizedName, StringComparison.Ordinal))
+                .Select(m => new ModifierSelection(m.Id, m.Name, product.Id))
+                .ToList();
+
+            if (selectedModifiers.Count > 0)
+            {
+                slots.SetModifiers(selectedModifiers);
+            }
+            else if (!slots.Modifiers.IsFilled && (IntentMatches(intentLabel, IntentLabels.Negate) || ContainsNegation(normalized)))
+            {
+                slots.MarkNoModifiers();
+            }
+        }
+
+        if (!slots.PickupTime.IsFilled && TryParsePickupTime(utterance, out var pickupTime))
+        {
+            slots.SetPickupTime(pickupTime);
+        }
+    }
+
+    private static void EnsureDefaultVariant(VoiceOrderSlots slots, MenuProductSnapshot product)
+    {
+        if (product.Variants.Count == 0)
+        {
+            slots.ClearVariant();
+            return;
+        }
+
+        if (product.Variants.Count == 1)
+        {
+            var single = product.Variants[0];
+            slots.SetVariant(new VariantSelection(single.Id, single.Name, product.Id));
+            return;
+        }
+
+        if (slots.Variant.Selection is null || slots.Variant.Selection.ProductId != product.Id)
+        {
+            var defaultVariant = product.Variants.FirstOrDefault(v => v.IsDefault);
+            if (defaultVariant is not null)
+            {
+                slots.SetVariant(new VariantSelection(defaultVariant.Id, defaultVariant.Name, product.Id));
+            }
+        }
+    }
+
+    private static bool TryMatchVariant(string utterance, string normalizedCompact, MenuProductSnapshot product, out MenuVariantSnapshot variant)
+    {
+        foreach (var candidate in product.Variants)
+        {
+            if (ContainsPhrase(utterance, candidate.Name) || normalizedCompact.Contains(candidate.NormalizedName, StringComparison.Ordinal))
+            {
+                variant = candidate;
+                return true;
+            }
+        }
+
+        variant = null!;
+        return false;
+    }
+
+    private static string BuildOrderSummary(VoiceOrderSlots slots, MenuProductSnapshot product)
+    {
+        var quantity = Math.Max(1, slots.Quantity.Value.GetValueOrDefault(1));
+        var builder = new StringBuilder();
+        builder.Append(quantity);
+        builder.Append(quantity == 1 ? " x " : " x ");
+        builder.Append(product.Name);
+
+        if (slots.Variant.Selection is { } variant && variant.ProductId == product.Id)
+        {
+            builder.Append(" (");
+            builder.Append(variant.Name);
+            builder.Append(')');
+        }
+
+        if (slots.Modifiers.IsFilled && !slots.Modifiers.IsExplicitNone && slots.Modifiers.Selections.Count > 0)
+        {
+            builder.Append(" with ");
+            builder.Append(string.Join(" and ", slots.Modifiers.Selections.Select(m => m.Name)));
+        }
+
+        if (slots.PickupTime.Value is DateTimeOffset pickup)
+        {
+            builder.Append(", ready at ");
+            builder.Append(pickup.ToLocalTime().ToString("t", CultureInfo.CurrentCulture));
+        }
+
+        return builder.ToString();
+    }
+
+    private async Task<MenuSnapshot> LoadMenuSnapshotAsync(CancellationToken cancellationToken)
+    {
+        var products = await _dbContext.Products
+            .AsNoTracking()
+            .Where(p => p.IsAvailable)
+            .Include(p => p.Variants)
+            .Include(p => p.Modifiers)
+            .OrderBy(p => p.Name)
+            .ToListAsync(cancellationToken);
+
+        var snapshots = products.Select(product => new MenuProductSnapshot(
+            product.Id,
+            product.Name,
+            product.Variants
+                .OrderBy(v => v.Name)
+                .Select(v => new MenuVariantSnapshot(v.Id, v.Name, v.IsDefault))
+                .ToList(),
+            product.Modifiers
+                .OrderBy(m => m.Name)
+                .Select(m => new MenuModifierSnapshot(m.Id, m.Name))
+                .ToList()))
+            .ToList();
+
+        return new MenuSnapshot(snapshots);
+    }
+
+    private bool TryParsePickupTime(string utterance, out DateTimeOffset pickupTime)
+    {
+        pickupTime = default;
+
+        if (string.IsNullOrWhiteSpace(utterance))
+        {
+            return false;
+        }
+
+        var now = _dateTimeProvider.UtcNow;
+        const DateTimeStyles styles = DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeLocal;
+
+        if (DateTime.TryParse(utterance, CultureInfo.CurrentCulture, styles, out var parsed)
+            || DateTime.TryParse(utterance, CultureInfo.InvariantCulture, styles, out parsed))
+        {
+            var local = DateTime.SpecifyKind(parsed, DateTimeKind.Local);
+            if (local < now.ToLocalTime())
+            {
+                local = local.AddDays(1);
+            }
+
+            var candidate = new DateTimeOffset(local);
+            if (SlotValidation.IsValidPickupTime(candidate, now))
+            {
+                pickupTime = candidate;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryParseQuantity(string utterance, out int quantity)
+    {
+        quantity = default;
+        if (string.IsNullOrWhiteSpace(utterance))
+        {
+            return false;
+        }
+
+        var match = QuantityRegex.Match(utterance);
+        if (match.Success && int.TryParse(match.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var numeric))
+        {
+            quantity = numeric;
+            return true;
+        }
+
+        var tokens = utterance.Split(TokenSeparators, StringSplitOptions.RemoveEmptyEntries);
+        foreach (var token in tokens)
+        {
+            if (QuantityWords.TryGetValue(token.ToLowerInvariant(), out var wordValue))
+            {
+                quantity = wordValue;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string NormalizeForLookup(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder(text.Length);
+        foreach (var ch in text)
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                builder.Append(char.ToLowerInvariant(ch));
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    private static bool ContainsPhrase(string source, string phrase)
+    {
+        return !string.IsNullOrWhiteSpace(phrase)
+            && source.IndexOf(phrase, StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private sealed class MenuSnapshot
+    {
+        private readonly IReadOnlyList<MenuProductSnapshot> _products;
+        private readonly Dictionary<int, MenuProductSnapshot> _productsById;
+
+        public MenuSnapshot(IReadOnlyList<MenuProductSnapshot> products)
+        {
+            _products = products;
+            _productsById = products.ToDictionary(p => p.Id);
+        }
+
+        public bool TryMatchProduct(string utterance, string normalizedCompact, out MenuProductSnapshot product)
+        {
+            foreach (var candidate in _products)
+            {
+                if (ContainsPhrase(utterance, candidate.Name) || normalizedCompact.Contains(candidate.NormalizedName, StringComparison.Ordinal))
+                {
+                    product = candidate;
+                    return true;
+                }
+            }
+
+            product = null!;
+            return false;
+        }
+
+        public bool TryGetProduct(int productId, out MenuProductSnapshot product)
+        {
+            return _productsById.TryGetValue(productId, out product);
+        }
+
+        public IEnumerable<string> GetTopProductNames(int count)
+        {
+            return _products.Take(count).Select(p => p.Name);
+        }
+    }
+
+    private sealed class MenuProductSnapshot
+    {
+        public MenuProductSnapshot(int id, string name, IReadOnlyList<MenuVariantSnapshot> variants, IReadOnlyList<MenuModifierSnapshot> modifiers)
+        {
+            Id = id;
+            Name = name;
+            NormalizedName = NormalizeForLookup(name);
+            Variants = variants;
+            Modifiers = modifiers;
+        }
+
+        public int Id { get; }
+        public string Name { get; }
+        public string NormalizedName { get; }
+        public IReadOnlyList<MenuVariantSnapshot> Variants { get; }
+        public IReadOnlyList<MenuModifierSnapshot> Modifiers { get; }
+    }
+
+    private sealed class MenuVariantSnapshot
+    {
+        public MenuVariantSnapshot(int id, string name, bool isDefault)
+        {
+            Id = id;
+            Name = name;
+            IsDefault = isDefault;
+            NormalizedName = NormalizeForLookup(name);
+        }
+
+        public int Id { get; }
+        public string Name { get; }
+        public bool IsDefault { get; }
+        public string NormalizedName { get; }
+    }
+
+    private sealed class MenuModifierSnapshot
+    {
+        public MenuModifierSnapshot(int id, string name)
+        {
+            Id = id;
+            Name = name;
+            NormalizedName = NormalizeForLookup(name);
+        }
+
+        public int Id { get; }
+        public string Name { get; }
+        public string NormalizedName { get; }
     }
 
     private static string? GetIntentLabel(IReadOnlyDictionary<string, string>? metadata)

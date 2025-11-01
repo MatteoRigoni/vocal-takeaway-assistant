@@ -2,17 +2,78 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, ReplaySubject, from, map, switchMap, tap } from 'rxjs';
 
-interface VoiceSessionResponse {
+interface ProductSlotDto {
+  productId: number | null;
+  name: string | null;
+  isFilled: boolean;
+}
+
+interface VariantSlotDto {
+  variantId: number | null;
+  name: string | null;
+  productId: number | null;
+  isFilled: boolean;
+}
+
+interface QuantitySlotDto {
+  quantity: number | null;
+  isFilled: boolean;
+}
+
+interface ModifierSelectionDto {
+  modifierId: number;
+  name: string;
+  productId: number;
+}
+
+interface ModifiersSlotDto {
+  selections: ModifierSelectionDto[];
+  isFilled: boolean;
+  isExplicitNone: boolean;
+}
+
+interface PickupTimeSlotDto {
+  value: string | null;
+  isFilled: boolean;
+}
+
+export interface VoiceOrderSlotsDto {
+  product: ProductSlotDto;
+  variant: VariantSlotDto;
+  quantity: QuantitySlotDto;
+  modifiers: ModifiersSlotDto;
+  pickupTime: PickupTimeSlotDto;
+}
+
+export interface VoiceSessionResponse {
   recognizedText: string;
   responseAudioChunks: string[];
+  promptText: string;
+  dialogState: string;
+  isSessionComplete: boolean;
+  slots: VoiceOrderSlotsDto;
+  metadata?: Record<string, string>;
+}
+
+export interface ProcessedVoiceResponse {
+  response: VoiceSessionResponse;
+  audio: Blob;
 }
 
 @Injectable({ providedIn: 'root' })
 export class VoiceService {
   private readonly voiceSessionEndpoint = '/api/voice/session';
+  private readonly callerId = this.generateCallerId();
+  private currentSlots: VoiceOrderSlotsDto | null = null;
 
   private readonly recognizedTextSubject = new BehaviorSubject<string>('');
   readonly recognizedText$ = this.recognizedTextSubject.asObservable();
+
+  private readonly promptSubject = new BehaviorSubject<string>('');
+  readonly prompt$ = this.promptSubject.asObservable();
+
+  private readonly slotsSubject = new BehaviorSubject<VoiceOrderSlotsDto | null>(null);
+  readonly slots$ = this.slotsSubject.asObservable();
 
   private readonly synthesizedAudioSubject = new ReplaySubject<Blob>(1);
   readonly synthesizedAudio$ = this.synthesizedAudioSubject.asObservable();
@@ -21,56 +82,43 @@ export class VoiceService {
 
   constructor(private readonly http: HttpClient) {}
 
-  transcribeAudio(audioBlob: Blob): Observable<string> {
+  processAudio(audioBlob: Blob): Observable<ProcessedVoiceResponse> {
     return from(this.encodeAudioBlob(audioBlob)).pipe(
       switchMap((audioChunks) =>
         this.http.post<VoiceSessionResponse>(this.voiceSessionEndpoint, {
+          callerId: this.callerId,
           audioChunks,
-          responseText: null,
+          utteranceText: null,
+          slots: this.currentSlots,
           voice: null,
         })
       ),
-      map((response) => response?.recognizedText ?? ''),
-      tap((text) => this.recognizedTextSubject.next(text))
+      map((response) => ({ response, audio: this.decodeAudioChunks(response?.responseAudioChunks ?? []) })),
+      tap(({ response, audio }) => {
+        this.currentSlots = response?.slots ?? null;
+        this.recognizedTextSubject.next(response?.recognizedText ?? '');
+        this.promptSubject.next(response?.promptText ?? '');
+        this.slotsSubject.next(this.currentSlots);
+        if (audio.size > 0) {
+          this.synthesizedAudioSubject.next(audio);
+        }
+        if (response?.isSessionComplete) {
+          this.resetSession();
+        }
+      })
     );
   }
 
-  requestSynthesis(text: string): Observable<Blob> {
-    console.log('[VoiceService] Richiesta sintesi per il testo:', text);
-    return this.http
-      .post<VoiceSessionResponse>(this.voiceSessionEndpoint, {
-        audioChunks: [],
-        responseText: text,
-        voice: null,
-      })
-      .pipe(
-        tap((response) => {
-          console.log('[VoiceService] Risposta sessione voce:', response);
-          if (response && response.responseAudioChunks) {
-            response.responseAudioChunks.forEach((chunk, idx) => {
-              const anteprima = chunk ? chunk.substring(0, 60) + '...' : '(vuoto/null)';
-              let decoded = '';
-              try {
-                decoded = atob(chunk);
-              } catch { decoded = '(errore decodifica base64)'; }
-              console.log(`[VoiceService] Chunk audio[${idx}] base64:`, anteprima);
-              // Provare a stampare come testo umano  
-              console.log(`[VoiceService] Chunk audio[${idx}] decodificato:`, decoded.substring(0, 120));
-            });
-          }
-        }),
-        map((response) => this.decodeAudioChunks(response?.responseAudioChunks ?? [])),
-        tap((blob) => {
-          console.log('[VoiceService] Blob audio sintetizzato:', blob);
-          this.synthesizedAudioSubject.next(blob);
-        })
-      );
+  resetSession(): void {
+    this.currentSlots = null;
+    this.slotsSubject.next(null);
   }
 
   async playAudio(blob: Blob): Promise<void> {
-    console.log('[VoiceService] playAudio: ricevo blob da riprodurre:', blob);
+    if (!blob.size) {
+      return;
+    }
     const arrayBuffer = await blob.arrayBuffer();
-    console.log('[VoiceService] ArrayBuffer byteLength:', arrayBuffer.byteLength);
     this.audioContext ??= new AudioContext();
     const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer.slice(0));
     const source = this.audioContext.createBufferSource();
@@ -88,6 +136,14 @@ export class VoiceService {
 
   disconnectStream(): void {
     // No streaming hub is currently available; method retained for API compatibility.
+  }
+
+  private generateCallerId(): string {
+    const globalCrypto = (globalThis as unknown as { crypto?: Crypto & { randomUUID?: () => string } }).crypto;
+    if (globalCrypto?.randomUUID) {
+      return `web-${globalCrypto.randomUUID()}`;
+    }
+    return `web-${Date.now().toString(36)}`;
   }
 
   private async encodeAudioBlob(blob: Blob, chunkSize = 16384): Promise<string[]> {

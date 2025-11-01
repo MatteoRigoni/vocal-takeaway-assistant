@@ -116,3 +116,25 @@
   margin: 0.75rem 0 0;
   color: rgba(226, 232, 240, 0.92);
 }
+
+.slots {
+  background: rgba(30, 41, 59, 0.55);
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.slots dl {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.slots dt {
+  font-weight: 600;
+  color: rgba(248, 250, 252, 0.85);
+}
+
+.slots dd {
+  margin: 0;
+  color: rgba(203, 213, 225, 0.9);
+}

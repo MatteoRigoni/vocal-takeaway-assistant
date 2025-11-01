@@ -19,6 +19,10 @@ export class VoiceOrderComponent implements OnDestroy {
     return this.voiceService.recognizedText$;
   }
 
+  get slots() {
+    return this.voiceService.slots$;
+  }
+
   private mediaRecorder?: MediaRecorder;
   private mediaStream?: MediaStream;
   private audioChunks: BlobPart[] = [];
@@ -158,14 +162,14 @@ export class VoiceOrderComponent implements OnDestroy {
 
     this.status.set('submitting');
     try {
-      const transcript = await firstValueFrom(this.voiceService.transcribeAudio(blob));
-      this.confirmationMessage.set(`Heard: ${transcript}`);
-      if (transcript) {
-        const response = `Messaggio ricevuto: ${transcript}.`;
-        const ttsBlob = await firstValueFrom(this.voiceService.requestSynthesis(response));
+      const { response, audio } = await firstValueFrom(this.voiceService.processAudio(blob));
+      this.confirmationMessage.set(response.promptText || null);
+      if (audio.size) {
         this.status.set('playing');
-        await this.voiceService.playAudio(ttsBlob);
-        this.confirmationMessage.set('Ready to confirm your order?');
+        await this.voiceService.playAudio(audio);
+      }
+      if (response.isSessionComplete) {
+        this.confirmationMessage.set('Session completed. You can start a new order when ready.');
       }
     } catch (error) {
       this.errorMessage.set('We could not reach the speech service. Please try again.');
