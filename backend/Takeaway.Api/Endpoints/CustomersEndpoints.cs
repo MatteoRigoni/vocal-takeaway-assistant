@@ -3,6 +3,7 @@ using FluentValidation;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Takeaway.Api.Authorization;
 using Takeaway.Api.Contracts.Customers;
 using Takeaway.Api.Data;
 using Takeaway.Api.Extensions;
@@ -23,7 +24,8 @@ public static class CustomersEndpoints
                 .ToListAsync(cancellationToken);
 
             return Results.Ok(customers);
-        }).WithName("ListCustomers");
+        }).WithName("ListCustomers")
+        .RequireAuthorization(AuthorizationPolicies.ViewCustomers);
 
         group.MapGet("/{id:int}", async Task<Results<Ok<CustomerDto>, NotFound>> (int id, TakeawayDbContext dbContext, CancellationToken cancellationToken) =>
         {
@@ -33,7 +35,8 @@ public static class CustomersEndpoints
                 .FirstOrDefaultAsync(cancellationToken);
 
             return customer is null ? TypedResults.NotFound() : TypedResults.Ok(customer);
-        }).WithName("GetCustomer");
+        }).WithName("GetCustomer")
+        .RequireAuthorization(AuthorizationPolicies.ViewCustomers);
 
         group.MapPost("", async Task<Results<Created<CustomerDto>, BadRequest<ValidationProblemDetails>>>
             (UpsertCustomerRequest request, IValidator<UpsertCustomerRequest> validator, TakeawayDbContext dbContext, CancellationToken cancellationToken) =>
@@ -57,7 +60,8 @@ public static class CustomersEndpoints
 
             var dto = new CustomerDto(customer.Id, customer.Name, customer.Phone, customer.Email, customer.Address);
             return TypedResults.Created($"/customers/{customer.Id}", dto);
-        }).WithName("CreateCustomer");
+        }).WithName("CreateCustomer")
+        .RequireAuthorization(AuthorizationPolicies.ManageCustomers);
 
         group.MapPut("/{id:int}", async Task<Results<Ok<CustomerDto>, NotFound, BadRequest<ValidationProblemDetails>>>
             (int id, UpsertCustomerRequest request, IValidator<UpsertCustomerRequest> validator, TakeawayDbContext dbContext, CancellationToken cancellationToken) =>
@@ -83,7 +87,8 @@ public static class CustomersEndpoints
 
             var dto = new CustomerDto(customer.Id, customer.Name, customer.Phone, customer.Email, customer.Address);
             return TypedResults.Ok(dto);
-        }).WithName("UpdateCustomer");
+        }).WithName("UpdateCustomer")
+        .RequireAuthorization(AuthorizationPolicies.ManageCustomers);
 
         group.MapDelete("/{id:int}", async Task<Results<NoContent, NotFound>> (int id, TakeawayDbContext dbContext, CancellationToken cancellationToken) =>
         {
@@ -96,7 +101,8 @@ public static class CustomersEndpoints
             dbContext.Customers.Remove(customer);
             await dbContext.SaveChangesAsync(cancellationToken);
             return TypedResults.NoContent();
-        }).WithName("DeleteCustomer");
+        }).WithName("DeleteCustomer")
+        .RequireAuthorization(AuthorizationPolicies.ManageCustomers);
 
         return app;
     }

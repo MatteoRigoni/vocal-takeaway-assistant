@@ -27,7 +27,7 @@ The hubs reuse EF Core entities and `OrderMappingExtensions` to serialise kitche
 
 ### API surface
 
-`/orders/kds` returns the current active kitchen queue. Optional query parameters allow filtering by status. Endpoints that create or update orders dispatch both the customer notifications and the KDS events through the new `IKitchenDisplayNotifier`.
+`/kds/tickets` returns the current active kitchen queue (legacy clients can continue using `/orders/kds`). Optional query parameters allow filtering by status. Endpoints that create or update orders dispatch both the customer notifications and the KDS events through the new `IKitchenDisplayNotifier`.
 
 ### Angular dashboard
 
@@ -43,7 +43,7 @@ Styling is fully responsive with a dark, high-contrast theme optimised for touch
 
 ## Testing Strategy
 
-- **Backend integration:** `KitchenDisplayTests` spins up the ASP.NET test server, connects with a real `HubConnection`, posts an order and asserts that the KDS hub broadcasts within one second. It also validates the `/orders/kds` endpoint shape.
+- **Backend integration:** `KitchenDisplayTests` spins up the ASP.NET test server, connects with a real `HubConnection`, posts an order and asserts that the KDS hub broadcasts within one second. It also validates the `/kds/tickets` endpoint shape.
 - **Angular unit tests:** `kitchen-display.service.spec.ts` verifies that the service ingests snapshots and honours filter selections without requiring a live hub.
 
 ## Running the Stack

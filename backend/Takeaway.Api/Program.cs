@@ -1,12 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
+using Takeaway.Api.Authorization;
 using Takeaway.Api.Data;
 using Takeaway.Api.Domain.Constants;
 using Takeaway.Api.Domain.Entities;
@@ -41,6 +45,16 @@ builder.Services.PostConfigure<SpeechServicesOptions>(options =>
     options.SpeechToTextBaseUrl ??= Program.GetUriFromConfiguration(builder.Configuration, "STT:BaseUrl");
     options.TextToSpeechBaseUrl ??= Program.GetUriFromConfiguration(builder.Configuration, "TTS:BaseUrl");
 });
+builder.Services.AddOptions<JwtOptions>()
+    .Bind(builder.Configuration.GetSection(JwtOptions.SectionName))
+    .ValidateDataAnnotations()
+    .Validate(o => !string.IsNullOrWhiteSpace(o.SigningKey), "JWT signing key is required.")
+    .ValidateOnStart();
+builder.Services.AddOptions<DemoAuthenticationOptions>()
+    .Bind(builder.Configuration.GetSection(DemoAuthenticationOptions.SectionName))
+    .ValidateDataAnnotations()
+    .Validate(o => o.DemoUsers.All(u => u.IsValid()), "Demo users must include username, password hash and role.")
+    .ValidateOnStart();
 builder.Services.AddScoped<IOrderPricingService, OrderPricingService>();
 builder.Services.AddScoped<IOrderThrottlingService, OrderThrottlingService>();
 builder.Services.AddScoped<IOrderCodeGenerator, OrderCodeGenerator>();
@@ -71,6 +85,42 @@ builder.Services.AddHttpClient<ITextToSpeechClient, PiperTextToSpeechClient>((sp
         client.BaseAddress = options.TextToSpeechBaseUrl;
     }
 });
+builder.Services.AddSingleton<IDemoUserStore, DemoUserStore>();
+builder.Services.AddTakeawayAuthorization();
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        var jwt = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? throw new InvalidOperationException("JWT options are not configured.");
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwt.Issuer,
+            ValidAudience = jwt.Audience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.SigningKey)),
+            ClockSkew = TimeSpan.FromMinutes(1)
+        };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+                {
+                    context.Token = accessToken;
+                }
+
+                return Task.CompletedTask;
+            }
+        };
+    });
+
+builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
@@ -120,6 +170,9 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
 
 app.UseHttpsRedirection();
 
+app.UseAuthentication();
+app.UseAuthorization();
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
@@ -135,12 +188,14 @@ if (app.Environment.IsDevelopment())
 app.MapGet("/", () => Results.Ok(new { app = "voice-ai-takeaway", service = "api", message = "hello from .NET 9" }));
 app.MapGet("/health", () => Results.Ok(new { status = "Healthy", service = "api" }));
 
+app.MapAuthEndpoints();
 app.MapMenuEndpoints();
 app.MapOrdersEndpoints();
 app.MapCustomerEndpoints();
 app.MapVoiceEndpoints();
-app.MapHub<OrdersHub>("/hubs/orders");
-app.MapHub<KdsHub>("/hubs/kds");
+app.MapKitchenDisplayEndpoints();
+app.MapHub<OrdersHub>("/hubs/orders").RequireAuthorization(AuthorizationPolicies.ViewOrders);
+app.MapHub<KdsHub>("/hubs/kds").RequireAuthorization(AuthorizationPolicies.ManageKitchen);
 
 app.Run();
 
