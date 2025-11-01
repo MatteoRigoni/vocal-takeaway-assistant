@@ -40,6 +40,7 @@ describe('VoiceOrderComponent', () => {
       'disconnectStream',
     ], {
       recognizedText$: of('One Margherita'),
+      transcriptEntries$: of([]),
     });
 
     voiceService.transcribeAudio.and.returnValue(of('One Margherita'));

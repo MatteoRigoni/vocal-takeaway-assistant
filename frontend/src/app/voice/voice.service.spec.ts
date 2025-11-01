@@ -52,7 +52,7 @@ describe('VoiceService', () => {
     }
   });
 
-  it('should post audio data for transcription and emit recognized text', (done) => {
+  it('should post audio data for transcription, emit recognized text and store transcript entries', (done) => {
     const blob = new Blob(['audio'], { type: 'audio/webm' });
 
     service.recognizedText$.pipe(take(1)).subscribe((initial) => {
@@ -63,7 +63,10 @@ describe('VoiceService', () => {
       expect(text).toBe('One Margherita');
       service.recognizedText$.pipe(take(1)).subscribe((value) => {
         expect(value).toBe('One Margherita');
-        done();
+        service.transcriptEntries$.pipe(take(1)).subscribe((entries) => {
+          expect(entries).toEqual([{ speaker: 'user', text: 'One Margherita' }]);
+          done();
+        });
       });
     });
 
@@ -73,11 +76,12 @@ describe('VoiceService', () => {
       audioChunks: ['YXVkaW8='],
       responseText: null,
       voice: null,
+      CallerId: 'TestUser',
     });
     req.flush({ recognizedText: 'One Margherita', responseAudioChunks: [] });
   });
 
-  it('should request synthesized audio and expose decoded blobs', (done) => {
+  it('should request synthesized audio, expose decoded blobs and store assistant transcript entries', (done) => {
     service.requestSynthesis('One Margherita').subscribe((response) => {
       response.text().then((text) => {
         expect(text).toBe('audio');
@@ -87,7 +91,10 @@ describe('VoiceService', () => {
           emitted.text().then((emittedText) => {
             expect(emittedText).toBe('audio');
             expect(emitted.type).toBe('audio/wav');
-            done();
+            service.transcriptEntries$.pipe(take(1)).subscribe((entries) => {
+              expect(entries).toEqual([{ speaker: 'assistant', text: 'One Margherita' }]);
+              done();
+            });
           });
         });
       });
@@ -98,7 +105,9 @@ describe('VoiceService', () => {
     expect(req.request.body).toEqual({
       audioChunks: [],
       responseText: 'One Margherita',
+      utteranceText: 'One Margherita',
       voice: null,
+      CallerId: 'TestUser',
     });
     req.flush({ recognizedText: '', responseAudioChunks: ['YXVkaW8='] });
   });
