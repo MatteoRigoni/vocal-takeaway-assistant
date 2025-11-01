@@ -15,7 +15,7 @@ public class OrderThrottlingTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         _client = _factory.CreateClient();
-        await Task.CompletedTask;
+        await _client.AuthenticateAsAsync(_factory, "admin", "Admin123!");
     }
 
     public async Task DisposeAsync()

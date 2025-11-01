@@ -15,6 +15,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Takeaway.Api.Authorization;
 using Takeaway.Api.Contracts.Voice;
 using Takeaway.Api.Extensions;
 using Takeaway.Api.Services;
@@ -28,7 +29,8 @@ public static class VoiceEndpoints
 {
     public static IEndpointRouteBuilder MapVoiceEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/voice");
+        var group = app.MapGroup("/voice")
+            .RequireAuthorization(AuthorizationPolicies.VoiceAutomation);
 
         group.MapPost("/session",
             async Task<Results<Ok<VoiceSessionResponse>, BadRequest<ValidationProblemDetails>, ProblemHttpResult>>(

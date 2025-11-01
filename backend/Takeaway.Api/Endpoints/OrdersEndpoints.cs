@@ -4,8 +4,8 @@ using System.Linq;
 using System.Text.Json;
 using FluentValidation;
 using Microsoft.AspNetCore.Http.HttpResults;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Takeaway.Api.Authorization;
 using Takeaway.Api.Contracts.Orders;
 using Takeaway.Api.Data;
 using Takeaway.Api.Domain.Constants;
@@ -30,7 +30,8 @@ public static class OrdersEndpoints
 
     public static IEndpointRouteBuilder MapOrdersEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/orders");
+        var group = app.MapGroup("/orders")
+            .RequireAuthorization(AuthorizationPolicies.ViewOrders);
 
         group.MapGet("/{code}",
             async Task<Results<Ok<OrderStatusResponse>, NotFound>>
@@ -49,47 +50,6 @@ public static class OrdersEndpoints
             })
         .WithName("GetOrderByCode")
         .WithSummary("Get the current status for an order using its public code.");
-
-        group.MapGet("/kds",
-            async Task<Ok<IReadOnlyList<KdsOrderTicketDto>>>
-            (
-                [FromQuery(Name = "status")] string? statusFilter,
-                TakeawayDbContext dbContext,
-                CancellationToken cancellationToken
-            ) =>
-            {
-                var query = dbContext.Orders
-                    .AsNoTracking()
-                    .IncludeKitchenDisplayData();
-
-                if (!string.IsNullOrWhiteSpace(statusFilter))
-                {
-                    var requested = statusFilter
-                        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                        .Select(s => OrderStatusCatalog.TryNormalize(s, out var normalized) ? normalized : s)
-                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-                    query = query.Where(o => requested.Contains(o.OrderStatus.Name));
-                }
-                else
-                {
-                    query = query.Where(o =>
-                        o.OrderStatus.Name != OrderStatusCatalog.Completed &&
-                        o.OrderStatus.Name != OrderStatusCatalog.Cancelled);
-                }
-
-                var orders = await query
-                    .OrderBy(o => o.CreatedAt)
-                    .ToListAsync(cancellationToken);
-
-                var tickets = orders
-                    .Select(o => o.ToKitchenTicketDto())
-                    .ToList();
-
-                return TypedResults.Ok<IReadOnlyList<KdsOrderTicketDto>>(tickets);
-            })
-        .WithName("GetKitchenDisplayOrders")
-        .WithSummary("Get the active kitchen display queue.");
 
         group.MapPatch("/{id:int}",
             async Task<Results<
@@ -197,7 +157,8 @@ public static class OrdersEndpoints
                 return TypedResults.Ok(ToOrderStatusResponse(order));
             })
         .WithName("UpdateOrder")
-        .WithSummary("Update an order's status, pickup time or notes.");
+        .WithSummary("Update an order's status, pickup time or notes.")
+        .RequireAuthorization(AuthorizationPolicies.ManageOrders);
 
         group.MapPost("/{id:int}/pay",
             async Task<Results<
@@ -267,7 +228,8 @@ public static class OrdersEndpoints
                 return TypedResults.Ok(ToOrderStatusResponse(order));
             })
         .WithName("PayOrder")
-        .WithSummary("Simulate a payment for the specified order.");
+        .WithSummary("Simulate a payment for the specified order.")
+        .RequireAuthorization(AuthorizationPolicies.ManageOrders);
 
         group.MapPost("",
             async Task<Results<
@@ -464,7 +426,8 @@ public static class OrdersEndpoints
             })
         .WithName("CreateOrder")
         .WithSummary("Create a new order with pricing, validation and throttling")
-        .ProducesProblem(StatusCodes.Status429TooManyRequests); 
+        .ProducesProblem(StatusCodes.Status429TooManyRequests)
+        .RequireAuthorization(AuthorizationPolicies.ManageOrders);
 
         return app;
     }

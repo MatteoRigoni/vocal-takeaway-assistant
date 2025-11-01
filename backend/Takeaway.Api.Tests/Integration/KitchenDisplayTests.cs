@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Threading.Tasks;
@@ -16,15 +17,20 @@ public class KitchenDisplayTests : IAsyncLifetime
     private readonly TestWebApplicationFactory _factory = new();
     private HttpClient _client = null!;
     private HubConnection _connection = null!;
+    private string _kitchenToken = string.Empty;
 
     public async Task InitializeAsync()
     {
         _client = _factory.CreateClient();
+        await _client.AuthenticateAsAsync(_factory, "admin", "Admin123!");
+        _kitchenToken = await TestAuthExtensions.CreateTokenAsync(_factory, "kitchen", "Kitchen123!");
+
         _connection = new HubConnectionBuilder()
             .WithUrl(new Uri("http://localhost/hubs/kds"), options =>
             {
                 options.HttpMessageHandlerFactory = _ => _factory.Server.CreateHandler();
                 options.Transports = HttpTransportType.LongPolling;
+                options.AccessTokenProvider = () => Task.FromResult(_kitchenToken);
             })
             .WithAutomaticReconnect()
             .Build();
@@ -107,7 +113,10 @@ public class KitchenDisplayTests : IAsyncLifetime
     {
         var createResponse = await CreateOrderAsync(CreateSampleOrder(DateTime.UtcNow.AddMinutes(45)));
 
-        var tickets = await _client.GetFromJsonAsync<IReadOnlyList<KdsOrderTicketDto>>("/orders/kds");
+        using var kitchenClient = _factory.CreateClient();
+        await kitchenClient.AuthenticateAsAsync(_factory, "kitchen", "Kitchen123!");
+
+        var tickets = await kitchenClient.GetFromJsonAsync<IReadOnlyList<KdsOrderTicketDto>>("/kds/tickets");
         Assert.NotNull(tickets);
         var ticket = Assert.Single(tickets!);
         Assert.Equal(createResponse.OrderId, ticket.OrderId);
@@ -115,6 +124,16 @@ public class KitchenDisplayTests : IAsyncLifetime
         Assert.NotEmpty(ticket.Items);
         Assert.Equal(DateTimeKind.Utc, ticket.CreatedAtUtc.Kind);
         Assert.Equal(DateTimeKind.Utc, ticket.PickupAtUtc.Kind);
+    }
+
+    [Fact]
+    public async Task CashierToken_CannotAccessKitchenTickets()
+    {
+        using var cashierClient = _factory.CreateClient();
+        await cashierClient.AuthenticateAsAsync(_factory, "cashier", "Cashier123!");
+
+        var response = await cashierClient.GetAsync("/kds/tickets");
+        Assert.Equal(System.Net.HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     private async Task<CreateOrderResponse> CreateOrderAsync(CreateOrderRequest request)

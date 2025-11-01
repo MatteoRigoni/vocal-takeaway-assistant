@@ -1,5 +1,6 @@
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
+using Takeaway.Api.Authorization;
 using Takeaway.Api.Contracts.Menu;
 using Takeaway.Api.Data;
 
@@ -9,7 +10,8 @@ public static class MenuEndpoints
 {
     public static IEndpointRouteBuilder MapMenuEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/menu");
+        var group = app.MapGroup("/menu")
+            .RequireAuthorization(AuthorizationPolicies.ViewMenu);
 
         group.MapGet("", async (TakeawayDbContext dbContext, CancellationToken cancellationToken) =>
         {
