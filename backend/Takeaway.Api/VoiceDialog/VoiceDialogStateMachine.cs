@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Takeaway.Api.VoiceDialog.IntentClassification;
 
 namespace Takeaway.Api.VoiceDialog;
 
@@ -101,14 +102,25 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
 
         var utterance = (dialogEvent.UtteranceText ?? string.Empty).Trim();
         var normalized = utterance.ToLowerInvariant();
+        var intentLabel = GetIntentLabel(dialogEvent.Metadata);
 
         session.Context.LastUtterance = utterance;
+
+        if (!string.IsNullOrWhiteSpace(intentLabel))
+        {
+            session.Context.Metadata[IntentMetadataKeys.LastLabel] = intentLabel;
+
+            if (dialogEvent.Metadata?.TryGetValue(IntentMetadataKeys.Confidence, out var confidenceValue))
+            {
+                session.Context.Metadata[IntentMetadataKeys.Confidence] = confidenceValue;
+            }
+        }
 
         return Task.FromResult(dialogEvent.Type switch
         {
             VoiceDialogEventType.Timeout => HandleTimeout(session),
             VoiceDialogEventType.System => HandleSystemEvent(session, dialogEvent.Metadata),
-            _ => HandleUtterance(session, normalized, utterance)
+            _ => HandleUtterance(session, normalized, utterance, intentLabel)
         });
     }
 
@@ -141,7 +153,7 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
     }
 
-    private static VoiceDialogResult HandleUtterance(VoiceDialogSession session, string normalized, string utterance)
+    private static VoiceDialogResult HandleUtterance(VoiceDialogSession session, string normalized, string utterance, string? intentLabel)
     {
         if (session.State is VoiceDialogState.Completed or VoiceDialogState.Cancelled)
         {
@@ -157,23 +169,28 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
         }
 
+        if (IntentMatches(intentLabel, IntentLabels.Fallback))
+        {
+            return HandleFallback(session);
+        }
+
         return session.State switch
         {
-            VoiceDialogState.Start => HandleStart(session, normalized),
-            VoiceDialogState.Ordering => HandleOrdering(session, normalized, utterance),
-            VoiceDialogState.Modifying => HandleModifying(session, normalized, utterance),
-            VoiceDialogState.Cancelling => HandleCancelling(session, normalized, utterance),
-            VoiceDialogState.CheckingStatus => HandleCheckingStatus(session, normalized, utterance),
-            VoiceDialogState.Confirming => HandleConfirming(session, normalized),
+            VoiceDialogState.Start => HandleStart(session, normalized, intentLabel),
+            VoiceDialogState.Ordering => HandleOrdering(session, normalized, utterance, intentLabel),
+            VoiceDialogState.Modifying => HandleModifying(session, normalized, utterance, intentLabel),
+            VoiceDialogState.Cancelling => HandleCancelling(session, normalized, utterance, intentLabel),
+            VoiceDialogState.CheckingStatus => HandleCheckingStatus(session, normalized, utterance, intentLabel),
+            VoiceDialogState.Confirming => HandleConfirming(session, normalized, intentLabel),
             _ => HandleFallback(session)
         };
     }
 
-    private static VoiceDialogResult HandleStart(VoiceDialogSession session, string normalized)
+    private static VoiceDialogResult HandleStart(VoiceDialogSession session, string normalized, string? intentLabel)
     {
         session.TransitionTo(VoiceDialogState.Start);
 
-        if (ContainsAny(normalized, "status", "where", "ready", "pickup"))
+        if (IntentMatches(intentLabel, IntentLabels.CheckStatus) || ContainsAny(normalized, "status", "where", "ready", "pickup"))
         {
             session.TransitionTo(VoiceDialogState.CheckingStatus);
             var prompt = "Sure, what order code should I check for you?";
@@ -181,7 +198,7 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
         }
 
-        if (ContainsAny(normalized, "cancel"))
+        if (IntentMatches(intentLabel, IntentLabels.CancelOrder) || ContainsAny(normalized, "cancel"))
         {
             session.TransitionTo(VoiceDialogState.Cancelling);
             var prompt = "I can cancel an order. What\'s the order code?";
@@ -189,12 +206,20 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
         }
 
-        if (ContainsAny(normalized, "modify", "change", "swap", "edit"))
+        if (IntentMatches(intentLabel, IntentLabels.ModifyOrder) || ContainsAny(normalized, "modify", "change", "swap", "edit"))
         {
             session.TransitionTo(VoiceDialogState.Modifying);
             var prompt = "Tell me what needs to change in your order.";
             session.Context.LastPrompt = prompt;
             return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
+        }
+
+        if (IntentMatches(intentLabel, IntentLabels.Greeting))
+        {
+            session.TransitionTo(VoiceDialogState.Ordering);
+            var greetingPrompt = "Hi there! What would you like to order today?";
+            session.Context.LastPrompt = greetingPrompt;
+            return new VoiceDialogResult(session.State, greetingPrompt, false, session.Context.Metadata);
         }
 
         session.TransitionTo(VoiceDialogState.Ordering);
@@ -205,9 +230,9 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         return new VoiceDialogResult(session.State, orderingPrompt, false, session.Context.Metadata);
     }
 
-    private static VoiceDialogResult HandleOrdering(VoiceDialogSession session, string normalized, string utterance)
+    private static VoiceDialogResult HandleOrdering(VoiceDialogSession session, string normalized, string utterance, string? intentLabel)
     {
-        if (ContainsAny(normalized, "status"))
+        if (IntentMatches(intentLabel, IntentLabels.CheckStatus) || ContainsAny(normalized, "status"))
         {
             session.TransitionTo(VoiceDialogState.CheckingStatus);
             var statusPrompt = "Sure, what order code should I look up?";
@@ -215,7 +240,7 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             return new VoiceDialogResult(session.State, statusPrompt, false, session.Context.Metadata);
         }
 
-        if (ContainsAny(normalized, "cancel"))
+        if (IntentMatches(intentLabel, IntentLabels.CancelOrder) || ContainsAny(normalized, "cancel"))
         {
             session.TransitionTo(VoiceDialogState.Cancelling);
             var cancelPrompt = "Okay, let\'s cancel an order. What\'s the code?";
@@ -223,7 +248,7 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             return new VoiceDialogResult(session.State, cancelPrompt, false, session.Context.Metadata);
         }
 
-        if (ContainsAny(normalized, "change", "modify", "swap"))
+        if (IntentMatches(intentLabel, IntentLabels.ModifyOrder) || ContainsAny(normalized, "change", "modify", "swap"))
         {
             session.TransitionTo(VoiceDialogState.Modifying);
             var modifyPrompt = "Tell me what to change in the order.";
@@ -231,7 +256,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             return new VoiceDialogResult(session.State, modifyPrompt, false, session.Context.Metadata);
         }
 
-        if (IsOrderCompletionCue(normalized) && session.Context.RequestedItems.Count > 0)
+        if ((IntentMatches(intentLabel, IntentLabels.CompleteOrder) || IsOrderCompletionCue(normalized))
+            && session.Context.RequestedItems.Count > 0)
         {
             session.TransitionTo(VoiceDialogState.Confirming);
             var summary = string.Join(", ", session.Context.RequestedItems);
@@ -241,14 +267,16 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             return new VoiceDialogResult(session.State, confirmPrompt, false, session.Context.Metadata);
         }
 
-        if (ContainsNegation(normalized) && session.Context.RequestedItems.Count == 0)
+        if ((IntentMatches(intentLabel, IntentLabels.Negate) || ContainsNegation(normalized))
+            && session.Context.RequestedItems.Count == 0)
         {
             var prompt = "No problem. Let me know when you\'re ready to order.";
             session.Context.LastPrompt = prompt;
             return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
         }
 
-        if (!string.IsNullOrWhiteSpace(utterance))
+        if (!string.IsNullOrWhiteSpace(utterance)
+            && (intentLabel is null || IntentMatches(intentLabel, IntentLabels.AddItem, IntentLabels.StartOrder)))
         {
             session.Context.RequestedItems.Add(CleanItemDescription(utterance));
         }
@@ -258,9 +286,9 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         return new VoiceDialogResult(session.State, nextPrompt, false, session.Context.Metadata);
     }
 
-    private static VoiceDialogResult HandleModifying(VoiceDialogSession session, string normalized, string utterance)
+    private static VoiceDialogResult HandleModifying(VoiceDialogSession session, string normalized, string utterance, string? intentLabel)
     {
-        if (ContainsAny(normalized, "cancel"))
+        if (IntentMatches(intentLabel, IntentLabels.CancelOrder) || ContainsAny(normalized, "cancel"))
         {
             session.TransitionTo(VoiceDialogState.Cancelling);
             var prompt = "Understood. What order code should I cancel?";
@@ -268,7 +296,7 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
         }
 
-        if (ContainsAny(normalized, "status"))
+        if (IntentMatches(intentLabel, IntentLabels.CheckStatus) || ContainsAny(normalized, "status"))
         {
             session.TransitionTo(VoiceDialogState.CheckingStatus);
             var prompt = "Sure, what order code should I check?";
@@ -276,7 +304,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
         }
 
-        if (IsOrderCompletionCue(normalized) && session.Context.RequestedItems.Count > 0)
+        if ((IntentMatches(intentLabel, IntentLabels.CompleteOrder) || IsOrderCompletionCue(normalized))
+            && session.Context.RequestedItems.Count > 0)
         {
             session.TransitionTo(VoiceDialogState.Confirming);
             var summary = string.Join(", ", session.Context.RequestedItems);
@@ -296,9 +325,9 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         return new VoiceDialogResult(session.State, nextPrompt, false, session.Context.Metadata);
     }
 
-    private static VoiceDialogResult HandleCancelling(VoiceDialogSession session, string normalized, string utterance)
+    private static VoiceDialogResult HandleCancelling(VoiceDialogSession session, string normalized, string utterance, string? intentLabel)
     {
-        if (ContainsAny(normalized, "status"))
+        if (IntentMatches(intentLabel, IntentLabels.CheckStatus) || ContainsAny(normalized, "status"))
         {
             session.TransitionTo(VoiceDialogState.CheckingStatus);
             var prompt = "Okay, what order code would you like me to check?";
@@ -316,7 +345,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
         }
 
-        if (ContainsAffirmation(normalized) && session.Context.OrderCode is not null)
+        if ((IntentMatches(intentLabel, IntentLabels.Affirm) || ContainsAffirmation(normalized))
+            && session.Context.OrderCode is not null)
         {
             session.TransitionTo(VoiceDialogState.Cancelled);
             var prompt = $"Done. Order {session.Context.OrderCode} has been cancelled.";
@@ -324,7 +354,7 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             return new VoiceDialogResult(session.State, prompt, true, session.Context.Metadata);
         }
 
-        if (ContainsNegation(normalized))
+        if (IntentMatches(intentLabel, IntentLabels.Negate) || ContainsNegation(normalized))
         {
             session.TransitionTo(VoiceDialogState.Ordering);
             var prompt = "No worries. What else can I help you with?";
@@ -337,9 +367,9 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         return new VoiceDialogResult(session.State, retryPrompt, false, session.Context.Metadata);
     }
 
-    private static VoiceDialogResult HandleCheckingStatus(VoiceDialogSession session, string normalized, string utterance)
+    private static VoiceDialogResult HandleCheckingStatus(VoiceDialogSession session, string normalized, string utterance, string? intentLabel)
     {
-        if (ContainsAny(normalized, "cancel"))
+        if (IntentMatches(intentLabel, IntentLabels.CancelOrder) || ContainsAny(normalized, "cancel"))
         {
             session.TransitionTo(VoiceDialogState.Cancelling);
             var prompt = "Okay, I can cancel it. What order code is it?";
@@ -357,7 +387,8 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
         }
 
-        if (ContainsAffirmation(normalized) && session.Context.OrderCode is not null)
+        if ((IntentMatches(intentLabel, IntentLabels.Affirm) || ContainsAffirmation(normalized))
+            && session.Context.OrderCode is not null)
         {
             var prompt = $"Order {session.Context.OrderCode} is ready for pickup.";
             session.TransitionTo(VoiceDialogState.Completed);
@@ -365,7 +396,7 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             return new VoiceDialogResult(session.State, prompt, true, session.Context.Metadata);
         }
 
-        if (ContainsNegation(normalized))
+        if (IntentMatches(intentLabel, IntentLabels.Negate) || ContainsNegation(normalized))
         {
             session.TransitionTo(VoiceDialogState.Ordering);
             var prompt = "Alright. Do you want to place a new order?";
@@ -378,9 +409,9 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         return new VoiceDialogResult(session.State, askPrompt, false, session.Context.Metadata);
     }
 
-    private static VoiceDialogResult HandleConfirming(VoiceDialogSession session, string normalized)
+    private static VoiceDialogResult HandleConfirming(VoiceDialogSession session, string normalized, string? intentLabel)
     {
-        if (ContainsAffirmation(normalized))
+        if (IntentMatches(intentLabel, IntentLabels.Affirm) || ContainsAffirmation(normalized))
         {
             if (session.Context.Metadata.TryGetValue("order.code", out var code) && !string.IsNullOrWhiteSpace(code))
             {
@@ -399,7 +430,7 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
             return new VoiceDialogResult(session.State, prompt, true, session.Context.Metadata);
         }
 
-        if (ContainsNegation(normalized))
+        if (IntentMatches(intentLabel, IntentLabels.Negate) || ContainsNegation(normalized))
         {
             session.TransitionTo(VoiceDialogState.Ordering);
             var prompt = "No problem. What should we adjust?";
@@ -418,6 +449,28 @@ public sealed class VoiceDialogStateMachine : IVoiceDialogStateMachine
         var prompt = "I\'m not sure how to handle that. Let\'s start over. What do you need help with?";
         session.Context.LastPrompt = prompt;
         return new VoiceDialogResult(session.State, prompt, false, session.Context.Metadata);
+    }
+
+    private static string? GetIntentLabel(IReadOnlyDictionary<string, string>? metadata)
+    {
+        if (metadata is null)
+        {
+            return null;
+        }
+
+        return metadata.TryGetValue(IntentMetadataKeys.Label, out var label) && !string.IsNullOrWhiteSpace(label)
+            ? label
+            : null;
+    }
+
+    private static bool IntentMatches(string? intentLabel, params string[] candidates)
+    {
+        if (string.IsNullOrWhiteSpace(intentLabel) || candidates is null || candidates.Length == 0)
+        {
+            return false;
+        }
+
+        return candidates.Any(candidate => string.Equals(intentLabel, candidate, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string CleanItemDescription(string utterance)

@@ -16,6 +16,7 @@ using Takeaway.Api.Options;
 using Takeaway.Api.Services;
 using Takeaway.Api.Validation;
 using Takeaway.Api.VoiceDialog;
+using Takeaway.Api.VoiceDialog.IntentClassification;
 using FluentValidation;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -34,6 +35,7 @@ builder.Services.AddValidatorsFromAssemblyContaining<CreateOrderRequestValidator
 builder.Services.Configure<OrderThrottlingOptions>(builder.Configuration.GetSection(OrderThrottlingOptions.SectionName));
 builder.Services.Configure<OrderCancellationOptions>(builder.Configuration.GetSection(OrderCancellationOptions.SectionName));
 builder.Services.Configure<SpeechServicesOptions>(builder.Configuration.GetSection(SpeechServicesOptions.SectionName));
+builder.Services.Configure<IntentClassifierOptions>(builder.Configuration.GetSection(IntentClassifierOptions.SectionName));
 builder.Services.PostConfigure<SpeechServicesOptions>(options =>
 {
     options.SpeechToTextBaseUrl ??= Program.GetUriFromConfiguration(builder.Configuration, "STT:BaseUrl");
@@ -47,6 +49,7 @@ builder.Services.AddSingleton<IOrderStatusNotifier, OrderStatusNotifier>();
 builder.Services.AddSingleton<IKitchenDisplayNotifier, KitchenDisplayNotifier>();
 builder.Services.AddSingleton<IOrderCancellationService, OrderCancellationService>();
 builder.Services.AddSingleton<IVoiceDialogStateMachine, VoiceDialogStateMachine>();
+builder.Services.AddSingleton<IIntentClassifier, MlNetIntentClassifier>();
 builder.Services.AddSingleton<IVoiceDialogSessionStore>(sp =>
 {
     var logger = sp.GetRequiredService<ILogger<InMemoryVoiceDialogSessionStore>>();

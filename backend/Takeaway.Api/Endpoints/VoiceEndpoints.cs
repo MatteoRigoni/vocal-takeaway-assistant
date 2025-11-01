@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,6 +14,7 @@ using Takeaway.Api.Extensions;
 using Takeaway.Api.Services;
 using Takeaway.Api.Validation;
 using Takeaway.Api.VoiceDialog;
+using Takeaway.Api.VoiceDialog.IntentClassification;
 
 namespace Takeaway.Api.Endpoints;
 
@@ -30,6 +32,7 @@ public static class VoiceEndpoints
                 ITextToSpeechClient textToSpeechClient,
                 IVoiceDialogSessionStore sessionStore,
                 IVoiceDialogStateMachine stateMachine,
+                IIntentClassifier intentClassifier,
                 ILoggerFactory loggerFactory,
                 CancellationToken cancellationToken
             ) =>
@@ -75,12 +78,23 @@ public static class VoiceEndpoints
                 }
 
                 var session = await sessionStore.GetOrCreateAsync(request.CallerId, cancellationToken);
+                IntentPrediction intentPrediction = intentClassifier.PredictIntent(recognizedText);
+                Dictionary<string, string>? eventMetadata = null;
+                if (intentPrediction.HasPrediction)
+                {
+                    eventMetadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        [IntentMetadataKeys.Label] = intentPrediction.Label!,
+                        [IntentMetadataKeys.Confidence] = intentPrediction.Confidence.ToString("0.000", CultureInfo.InvariantCulture)
+                    };
+                }
+
                 VoiceDialogResult dialogResult;
                 try
                 {
                     dialogResult = await stateMachine.HandleAsync(
                         session,
-                        new VoiceDialogEvent(VoiceDialogEventType.Utterance, recognizedText),
+                        new VoiceDialogEvent(VoiceDialogEventType.Utterance, recognizedText, eventMetadata),
                         cancellationToken);
                 }
                 catch (Exception ex)
