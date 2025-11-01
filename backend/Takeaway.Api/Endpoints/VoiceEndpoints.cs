@@ -35,10 +35,11 @@ public static class VoiceEndpoints
                     return TypedResults.BadRequest(validationResult.ToProblemDetails());
                 }
 
+                var audioChunks = request.AudioChunks ?? Array.Empty<string>();
                 List<byte[]> audio;
                 try
                 {
-                    audio = DecodeChunks(request.AudioChunks);
+                    audio = DecodeChunks(audioChunks);
                 }
                 catch (FormatException ex)
                 {
@@ -48,26 +49,21 @@ public static class VoiceEndpoints
                     }));
                 }
 
-                if (audio.Count == 0)
+                SpeechRecognitionResult transcription = new(string.Empty);
+                if (audio.Count > 0)
                 {
-                    return TypedResults.BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
+                    try
                     {
-                        [nameof(request.AudioChunks)] = new[] { "At least one audio chunk must contain data." }
-                    }));
-                }
-
-                SpeechRecognitionResult transcription;
-                try
-                {
-                    transcription = await speechToTextClient.TranscribeAsync(ToStream(audio), cancellationToken);
-                }
-                catch (SpeechClientException ex)
-                {
-                    return ToProblemResult("Speech-to-text service error", ex);
-                }
-                catch (HttpRequestException ex)
-                {
-                    return TypedResults.Problem(title: "Speech-to-text service unreachable", detail: ex.Message, statusCode: StatusCodes.Status503ServiceUnavailable);
+                        transcription = await speechToTextClient.TranscribeAsync(ToStream(audio), cancellationToken);
+                    }
+                    catch (SpeechClientException ex)
+                    {
+                        return ToProblemResult("Speech-to-text service error", ex);
+                    }
+                    catch (HttpRequestException ex)
+                    {
+                        return TypedResults.Problem(title: "Speech-to-text service unreachable", detail: ex.Message, statusCode: StatusCodes.Status503ServiceUnavailable);
+                    }
                 }
 
                 var responseAudio = new List<string>();

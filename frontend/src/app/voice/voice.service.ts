@@ -1,18 +1,15 @@
-import { Injectable, NgZone } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { BehaviorSubject, Observable, ReplaySubject, Subject, defer, map, switchAll, tap } from 'rxjs';
-import { HubConnection, HubConnectionBuilder, LogLevel } from '@microsoft/signalr';
+import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { BehaviorSubject, Observable, ReplaySubject, from, map, switchMap, tap } from 'rxjs';
 
-interface TranscriptionResponse {
-  text: string;
-  confidence?: number;
+interface VoiceSessionResponse {
+  recognizedText: string;
+  responseAudioChunks: string[];
 }
 
 @Injectable({ providedIn: 'root' })
 export class VoiceService {
-  private readonly sttEndpoint = '/api/speech/stt';
-  private readonly ttsEndpoint = '/api/speech/tts';
-  private readonly voiceHubUrl = '/hubs/voice';
+  private readonly voiceSessionEndpoint = '/api/voice/session';
 
   private readonly recognizedTextSubject = new BehaviorSubject<string>('');
   readonly recognizedText$ = this.recognizedTextSubject.asObservable();
@@ -20,26 +17,35 @@ export class VoiceService {
   private readonly synthesizedAudioSubject = new ReplaySubject<Blob>(1);
   readonly synthesizedAudio$ = this.synthesizedAudioSubject.asObservable();
 
-  private hubConnection?: HubConnection;
   private audioContext?: AudioContext;
 
-  constructor(private readonly http: HttpClient, private readonly zone: NgZone) {}
+  constructor(private readonly http: HttpClient) {}
 
   transcribeAudio(audioBlob: Blob): Observable<string> {
-    const formData = new FormData();
-    formData.append('file', audioBlob, 'voice-command.webm');
-
-    return this.http.post<TranscriptionResponse>(this.sttEndpoint, formData).pipe(
-      map((response) => response?.text ?? ''),
+    return from(this.encodeAudioBlob(audioBlob)).pipe(
+      switchMap((audioChunks) =>
+        this.http.post<VoiceSessionResponse>(this.voiceSessionEndpoint, {
+          audioChunks,
+          responseText: null,
+          voice: null,
+        })
+      ),
+      map((response) => response?.recognizedText ?? ''),
       tap((text) => this.recognizedTextSubject.next(text))
     );
   }
 
   requestSynthesis(text: string): Observable<Blob> {
-    const headers = new HttpHeaders({ 'Content-Type': 'application/json' });
     return this.http
-      .post(this.ttsEndpoint, { text }, { headers, responseType: 'blob' })
-      .pipe(tap((blob) => this.synthesizedAudioSubject.next(blob)));
+      .post<VoiceSessionResponse>(this.voiceSessionEndpoint, {
+        audioChunks: [],
+        responseText: text,
+        voice: null,
+      })
+      .pipe(
+        map((response) => this.decodeAudioChunks(response?.responseAudioChunks ?? [])),
+        tap((blob) => this.synthesizedAudioSubject.next(blob))
+      );
   }
 
   async playAudio(blob: Blob): Promise<void> {
@@ -56,45 +62,48 @@ export class VoiceService {
   }
 
   connectToVoiceStream(): Observable<string> {
-    if (this.hubConnection) {
-      return this.recognizedText$;
-    }
-
-    const connection$ = defer(async () => {
-      this.hubConnection = new HubConnectionBuilder()
-        .withUrl(this.voiceHubUrl)
-        .configureLogging(LogLevel.Information)
-        .withAutomaticReconnect()
-        .build();
-
-      const transcriptUpdates = new Subject<string>();
-
-      this.hubConnection.on('TranscriptionUpdated', (text: string) => {
-        this.zone.run(() => {
-          this.recognizedTextSubject.next(text);
-          transcriptUpdates.next(text);
-        });
-      });
-
-      this.hubConnection.onclose(() => {
-        transcriptUpdates.complete();
-      });
-
-      await this.hubConnection.start();
-      return transcriptUpdates.asObservable();
-    });
-
-    return connection$.pipe(switchAll(), tap({ error: () => this.teardownHub() }));
+    return this.recognizedText$;
   }
 
   disconnectStream(): void {
-    this.teardownHub();
+    // No streaming hub is currently available; method retained for API compatibility.
   }
 
-  private teardownHub(): void {
-    if (this.hubConnection) {
-      void this.hubConnection.stop();
-      this.hubConnection = undefined;
+  private async encodeAudioBlob(blob: Blob, chunkSize = 16384): Promise<string[]> {
+    const buffer = await blob.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    if (!bytes.length) {
+      return [];
     }
+
+    const encoded: string[] = [];
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      const slice = bytes.subarray(offset, offset + chunkSize);
+      let binary = '';
+      for (let index = 0; index < slice.length; index++) {
+        binary += String.fromCharCode(slice[index]);
+      }
+      encoded.push(btoa(binary));
+    }
+    return encoded;
+  }
+
+  private decodeAudioChunks(chunks: string[], mimeType = 'audio/wav'): Blob {
+    if (!chunks.length) {
+      return new Blob([], { type: mimeType });
+    }
+
+    const byteArrays = chunks
+      .filter((chunk) => !!chunk)
+      .map((chunk) => {
+        const binary = atob(chunk);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes;
+      });
+
+    return new Blob(byteArrays, { type: mimeType });
   }
 }
