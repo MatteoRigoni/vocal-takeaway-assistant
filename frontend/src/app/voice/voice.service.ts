@@ -7,12 +7,22 @@ interface VoiceSessionResponse {
   responseAudioChunks: string[];
 }
 
+export type TranscriptSpeaker = 'user' | 'assistant';
+
+export interface TranscriptEntry {
+  speaker: TranscriptSpeaker;
+  text: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class VoiceService {
   private readonly voiceSessionEndpoint = '/api/voice/session';
 
   private readonly recognizedTextSubject = new BehaviorSubject<string>('');
   readonly recognizedText$ = this.recognizedTextSubject.asObservable();
+
+  private readonly transcriptEntriesSubject = new BehaviorSubject<TranscriptEntry[]>([]);
+  readonly transcriptEntries$ = this.transcriptEntriesSubject.asObservable();
 
   private readonly synthesizedAudioSubject = new ReplaySubject<Blob>(1);
   readonly synthesizedAudio$ = this.synthesizedAudioSubject.asObservable();
@@ -32,7 +42,13 @@ export class VoiceService {
         })
       ),
       map((response) => response?.recognizedText ?? ''),
-      tap((text) => this.recognizedTextSubject.next(text))
+      tap((text) => {
+        const normalized = text?.trim() ?? '';
+        this.recognizedTextSubject.next(normalized);
+        if (normalized) {
+          this.appendTranscriptEntry('user', normalized);
+        }
+      })
     );
   }
 
@@ -47,6 +63,12 @@ export class VoiceService {
         CallerId: 'TestUser',
       })
       .pipe(
+        tap(() => {
+          const normalized = text?.trim();
+          if (normalized) {
+            this.appendTranscriptEntry('assistant', normalized);
+          }
+        }),
         tap((response) => {
           console.log('[VoiceService] Risposta sessione voce:', response);
           if (response && response.responseAudioChunks) {
@@ -91,6 +113,11 @@ export class VoiceService {
 
   disconnectStream(): void {
     // No streaming hub is currently available; method retained for API compatibility.
+  }
+
+  private appendTranscriptEntry(speaker: TranscriptSpeaker, text: string): void {
+    const current = this.transcriptEntriesSubject.getValue();
+    this.transcriptEntriesSubject.next([...current, { speaker, text }]);
   }
 
   private async encodeAudioBlob(blob: Blob, chunkSize = 16384): Promise<string[]> {
