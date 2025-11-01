@@ -169,13 +169,24 @@ export class VoiceOrderComponent implements OnDestroy {
 
     this.status.set('submitting');
     try {
-      const transcript = await firstValueFrom(this.voiceService.transcribeAudio(blob));
-      this.confirmationMessage.set(`Heard: ${transcript}`);
+      const session = await firstValueFrom(this.voiceService.transcribeAudio(blob));
+      const transcript = session?.recognizedText?.trim() ?? '';
       if (transcript) {
-        const response = `Messaggio ricevuto: ${transcript}.`;
-        const ttsBlob = await firstValueFrom(this.voiceService.requestSynthesis(response));
+        this.confirmationMessage.set(`Heard: ${transcript}`);
+      }
+
+      const prompt = session?.promptText?.trim() ?? '';
+      if (prompt) {
+        this.confirmationMessage.set(prompt);
+      }
+
+      const audioBlob = this.voiceService.createAudioBlob(session?.responseAudioChunks ?? []);
+      if (audioBlob.size > 0) {
         this.status.set('playing');
-        await this.voiceService.playAudio(ttsBlob);
+        await this.voiceService.playAudio(audioBlob);
+      }
+
+      if (!prompt) {
         this.confirmationMessage.set('Ready to confirm your order?');
       }
     } catch (error) {
