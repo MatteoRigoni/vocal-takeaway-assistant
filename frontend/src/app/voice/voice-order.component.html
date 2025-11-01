@@ -34,16 +34,6 @@
 
   <section class="transcript">
     <h2>Live Transcript</h2>
-    <ng-container *ngIf="transcript | async as messages">
-      <ul class="transcript-list" *ngIf="messages.length; else waiting">
-        <li *ngFor="let message of messages" class="transcript-message" [ngClass]="message.role">
-          <span class="speaker" aria-hidden="true">{{ message.role === 'user' ? 'Customer' : 'Assistant' }}</span>
-          <p>{{ message.text }}</p>
-        </li>
-      </ul>
-    </ng-container>
-    <ng-template #waiting>
-      <p class="transcript-text">Waiting for speech…</p>
-    </ng-template>
+    <p class="transcript-text">{{ (recognizedText | async) || 'Waiting for speech…' }}</p>
   </section>
 </section>
