@@ -15,6 +15,7 @@ using Takeaway.Api.Hubs;
 using Takeaway.Api.Options;
 using Takeaway.Api.Services;
 using Takeaway.Api.Validation;
+using Takeaway.Api.VoiceDialog;
 using FluentValidation;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -45,6 +46,12 @@ builder.Services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
 builder.Services.AddSingleton<IOrderStatusNotifier, OrderStatusNotifier>();
 builder.Services.AddSingleton<IKitchenDisplayNotifier, KitchenDisplayNotifier>();
 builder.Services.AddSingleton<IOrderCancellationService, OrderCancellationService>();
+builder.Services.AddSingleton<IVoiceDialogStateMachine, VoiceDialogStateMachine>();
+builder.Services.AddSingleton<IVoiceDialogSessionStore>(sp =>
+{
+    var logger = sp.GetRequiredService<ILogger<InMemoryVoiceDialogSessionStore>>();
+    return new InMemoryVoiceDialogSessionStore(TimeSpan.FromMinutes(30), logger);
+});
 builder.Services.AddHttpClient<ISpeechToTextClient, FasterWhisperSpeechToTextClient>((sp, client) =>
 {
     var options = sp.GetRequiredService<IOptions<SpeechServicesOptions>>().Value;
