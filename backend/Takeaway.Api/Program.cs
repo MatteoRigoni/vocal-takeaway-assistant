@@ -48,7 +48,7 @@ builder.Services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
 builder.Services.AddSingleton<IOrderStatusNotifier, OrderStatusNotifier>();
 builder.Services.AddSingleton<IKitchenDisplayNotifier, KitchenDisplayNotifier>();
 builder.Services.AddSingleton<IOrderCancellationService, OrderCancellationService>();
-builder.Services.AddSingleton<IVoiceDialogStateMachine, VoiceDialogStateMachine>();
+builder.Services.AddScoped<IVoiceDialogStateMachine, VoiceDialogStateMachine>();
 builder.Services.AddSingleton<IIntentClassifier, MlNetIntentClassifier>();
 builder.Services.AddSingleton<IVoiceDialogSessionStore>(sp =>
 {

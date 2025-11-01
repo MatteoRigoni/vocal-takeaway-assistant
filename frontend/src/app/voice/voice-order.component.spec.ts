@@ -33,17 +33,33 @@ describe('VoiceOrderComponent', () => {
 
   beforeEach(async () => {
     voiceService = jasmine.createSpyObj<VoiceService>('VoiceService', [
-      'transcribeAudio',
-      'requestSynthesis',
+      'processAudio',
       'playAudio',
       'connectToVoiceStream',
       'disconnectStream',
     ], {
       recognizedText$: of('One Margherita'),
+      slots$: of(null),
     });
 
-    voiceService.transcribeAudio.and.returnValue(of('One Margherita'));
-    voiceService.requestSynthesis.and.returnValue(of(new Blob(['audio'], { type: 'audio/wav' })));
+    voiceService.processAudio.and.returnValue(of({
+      response: {
+        recognizedText: 'One Margherita',
+        responseAudioChunks: ['YXVkaW8='],
+        promptText: 'Any toppings?',
+        dialogState: 'Ordering',
+        isSessionComplete: false,
+        slots: {
+          product: { productId: 1, name: 'Margherita', isFilled: true },
+          variant: { variantId: null, name: null, productId: null, isFilled: false },
+          quantity: { quantity: 1, isFilled: true },
+          modifiers: { selections: [], isFilled: false, isExplicitNone: false },
+          pickupTime: { value: null, isFilled: false },
+        },
+        metadata: {},
+      },
+      audio: new Blob(['audio'], { type: 'audio/wav' }),
+    }));
     voiceService.playAudio.and.returnValue(Promise.resolve());
     voiceService.connectToVoiceStream.and.returnValue(of('One Margherita'));
 
@@ -96,8 +112,7 @@ describe('VoiceOrderComponent', () => {
     component.stopRecording();
     flushMicrotasks();
 
-    expect(voiceService.transcribeAudio).toHaveBeenCalled();
-    expect(voiceService.requestSynthesis).toHaveBeenCalledWith('One Margherita');
+    expect(voiceService.processAudio).toHaveBeenCalled();
     expect(voiceService.playAudio).toHaveBeenCalled();
   }));
 

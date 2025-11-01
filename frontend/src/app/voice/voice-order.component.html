@@ -36,4 +36,35 @@
     <h2>Live Transcript</h2>
     <p class="transcript-text">{{ (recognizedText | async) || 'Waiting for speech…' }}</p>
   </section>
+
+  <section class="slots" *ngIf="(slots | async) as slots">
+    <h2>Order Slot Progress</h2>
+    <dl>
+      <div>
+        <dt>Product</dt>
+        <dd>{{ slots.product.name || 'Pending' }}</dd>
+      </div>
+      <div>
+        <dt>Variant</dt>
+        <dd>{{ slots.variant.name || (slots.variant.isFilled ? 'Default' : 'Pending') }}</dd>
+      </div>
+      <div>
+        <dt>Quantity</dt>
+        <dd>{{ slots.quantity.quantity ?? (slots.quantity.isFilled ? 'Unknown' : 'Pending') }}</dd>
+      </div>
+      <div>
+        <dt>Modifiers</dt>
+        <dd>
+          <ng-container *ngIf="slots.modifiers.isFilled; else modifierPending">
+            {{ slots.modifiers.isExplicitNone ? 'No modifiers' : (slots.modifiers.selections.map((m) => m.name).join(', ') || 'Pending') }}
+          </ng-container>
+          <ng-template #modifierPending>Pending</ng-template>
+        </dd>
+      </div>
+      <div>
+        <dt>Pickup Time</dt>
+        <dd>{{ slots.pickupTime.value || (slots.pickupTime.isFilled ? 'Set' : 'Pending') }}</dd>
+      </div>
+    </dl>
+  </section>
 </section>

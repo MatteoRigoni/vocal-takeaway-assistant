@@ -8,5 +8,6 @@ public sealed record VoiceSessionResponse(
     string PromptText,
     string DialogState,
     bool IsSessionComplete,
+    VoiceOrderSlotsDto Slots,
     IReadOnlyDictionary<string, string>? Metadata
 );

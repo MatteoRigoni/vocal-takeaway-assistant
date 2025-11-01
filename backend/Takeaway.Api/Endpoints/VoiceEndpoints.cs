@@ -15,6 +15,7 @@ using Takeaway.Api.Services;
 using Takeaway.Api.Validation;
 using Takeaway.Api.VoiceDialog;
 using Takeaway.Api.VoiceDialog.IntentClassification;
+using Takeaway.Api.VoiceDialog.Slots;
 
 namespace Takeaway.Api.Endpoints;
 
@@ -92,6 +93,11 @@ public static class VoiceEndpoints
                 VoiceDialogResult dialogResult;
                 try
                 {
+                    if (request.Slots is not null)
+                    {
+                        session.Context.Slots.ApplySnapshot(request.Slots.ToSnapshot());
+                    }
+
                     dialogResult = await stateMachine.HandleAsync(
                         session,
                         new VoiceDialogEvent(VoiceDialogEventType.Utterance, recognizedText, eventMetadata),
@@ -107,6 +113,7 @@ public static class VoiceEndpoints
                         prompt,
                         VoiceDialogState.Error.ToString(),
                         true,
+                        VoiceOrderSlotsDto.Empty,
                         new Dictionary<string, string> { ["error"] = "dialog-failure" }
                     ));
                 }
@@ -138,12 +145,15 @@ public static class VoiceEndpoints
                     }
                 }
 
+                var slotDto = dialogResult.Slots.ToDto();
+
                 return TypedResults.Ok(new VoiceSessionResponse(
                     recognizedText,
                     responseAudio,
                     dialogResult.PromptText,
                     dialogResult.State.ToString(),
                     dialogResult.IsSessionComplete,
+                    slotDto,
                     dialogResult.Metadata
                 ));
             })
