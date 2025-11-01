@@ -67,26 +67,40 @@ describe('VoiceService', () => {
       });
     });
 
-    const req = httpMock.expectOne('/api/speech/stt');
+    const req = httpMock.expectOne('/api/voice/session');
     expect(req.request.method).toBe('POST');
-    expect(req.request.body instanceof FormData).toBeTrue();
-    req.flush({ text: 'One Margherita' });
+    expect(req.request.body).toEqual({
+      audioChunks: ['YXVkaW8='],
+      responseText: null,
+      voice: null,
+    });
+    req.flush({ recognizedText: 'One Margherita', responseAudioChunks: [] });
   });
 
-  it('should request TTS audio and expose synthesized blobs', (done) => {
-    const blob = new Blob(['audio'], { type: 'audio/wav' });
+  it('should request synthesized audio and expose decoded blobs', (done) => {
     service.requestSynthesis('One Margherita').subscribe((response) => {
-      expect(response).toEqual(blob);
-      service.synthesizedAudio$.pipe(take(1)).subscribe((emitted) => {
-        expect(emitted).toEqual(blob);
-        done();
+      response.text().then((text) => {
+        expect(text).toBe('audio');
+        expect(response.type).toBe('audio/wav');
+
+        service.synthesizedAudio$.pipe(take(1)).subscribe((emitted) => {
+          emitted.text().then((emittedText) => {
+            expect(emittedText).toBe('audio');
+            expect(emitted.type).toBe('audio/wav');
+            done();
+          });
+        });
       });
     });
 
-    const req = httpMock.expectOne('/api/speech/tts');
+    const req = httpMock.expectOne('/api/voice/session');
     expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({ text: 'One Margherita' });
-    req.flush(blob);
+    expect(req.request.body).toEqual({
+      audioChunks: [],
+      responseText: 'One Margherita',
+      voice: null,
+    });
+    req.flush({ recognizedText: '', responseAudioChunks: ['YXVkaW8='] });
   });
 
   it('should playback audio blobs via the Web Audio API', async () => {
