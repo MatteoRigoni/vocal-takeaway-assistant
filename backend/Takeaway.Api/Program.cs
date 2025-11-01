@@ -1,8 +1,11 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Scalar.AspNetCore;
 using Takeaway.Api.Data;
 using Takeaway.Api.Domain.Constants;
@@ -29,6 +32,12 @@ builder.Services.AddSignalR();
 builder.Services.AddValidatorsFromAssemblyContaining<CreateOrderRequestValidator>();
 builder.Services.Configure<OrderThrottlingOptions>(builder.Configuration.GetSection(OrderThrottlingOptions.SectionName));
 builder.Services.Configure<OrderCancellationOptions>(builder.Configuration.GetSection(OrderCancellationOptions.SectionName));
+builder.Services.Configure<SpeechServicesOptions>(builder.Configuration.GetSection(SpeechServicesOptions.SectionName));
+builder.Services.PostConfigure<SpeechServicesOptions>(options =>
+{
+    options.SpeechToTextBaseUrl ??= Program.GetUriFromConfiguration(builder.Configuration, "STT:BaseUrl");
+    options.TextToSpeechBaseUrl ??= Program.GetUriFromConfiguration(builder.Configuration, "TTS:BaseUrl");
+});
 builder.Services.AddScoped<IOrderPricingService, OrderPricingService>();
 builder.Services.AddScoped<IOrderThrottlingService, OrderThrottlingService>();
 builder.Services.AddScoped<IOrderCodeGenerator, OrderCodeGenerator>();
@@ -36,6 +45,22 @@ builder.Services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
 builder.Services.AddSingleton<IOrderStatusNotifier, OrderStatusNotifier>();
 builder.Services.AddSingleton<IKitchenDisplayNotifier, KitchenDisplayNotifier>();
 builder.Services.AddSingleton<IOrderCancellationService, OrderCancellationService>();
+builder.Services.AddHttpClient<ISpeechToTextClient, FasterWhisperSpeechToTextClient>((sp, client) =>
+{
+    var options = sp.GetRequiredService<IOptions<SpeechServicesOptions>>().Value;
+    if (options.SpeechToTextBaseUrl is not null)
+    {
+        client.BaseAddress = options.SpeechToTextBaseUrl;
+    }
+});
+builder.Services.AddHttpClient<ITextToSpeechClient, PiperTextToSpeechClient>((sp, client) =>
+{
+    var options = sp.GetRequiredService<IOptions<SpeechServicesOptions>>().Value;
+    if (options.TextToSpeechBaseUrl is not null)
+    {
+        client.BaseAddress = options.TextToSpeechBaseUrl;
+    }
+});
 
 var app = builder.Build();
 
@@ -103,6 +128,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "Healthy", service = "api"
 app.MapMenuEndpoints();
 app.MapOrdersEndpoints();
 app.MapCustomerEndpoints();
+app.MapVoiceEndpoints();
 app.MapHub<OrdersHub>("/hubs/orders");
 app.MapHub<KdsHub>("/hubs/kds");
 
@@ -145,5 +171,16 @@ public partial class Program
         {
             dbContext.SaveChanges();
         }
+    }
+
+    internal static Uri? GetUriFromConfiguration(IConfiguration configuration, string key)
+    {
+        var value = configuration.GetValue<string>(key);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return Uri.TryCreate(value, UriKind.Absolute, out var uri) ? uri : null;
     }
 }

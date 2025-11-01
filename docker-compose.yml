@@ -13,7 +13,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: "Development"
       ASPNETCORE_URLS: "http://+:8080"
-      STT__BaseUrl: "http://stt:9090"
+      STT__BaseUrl: "http://stt:8000"
       TTS__BaseUrl: "http://tts:5000"
     volumes:
       - ./data:/app/data
@@ -26,22 +26,21 @@ services:
       retries: 5
 
   stt:
-    image: ghcr.io/rhasspy/asr-faster-whisper:latest
+    image: ghcr.io/etalab-ia/faster-whisper-server/cpu:latest
     container_name: voiceai-stt
-    environment:
-      HTTP_PORT: "9090"
-      WHISPER_MODEL: "base"
+    # espone API tipo OpenAI su :8000
     ports:
-      - "9090:9090"
+      - "8000:8000"
     volumes:
-      - stt-models:/data
+      # cache HuggingFace per i modelli di whisper
+      - stt-models:/root/.cache/huggingface
 
   tts:
-    image: ghcr.io/rhasspy/tts-piper:latest
+    image: artibex/piper-http:latest
     container_name: voiceai-tts
     environment:
-      HTTP_PORT: "5000"
-      VOICE: "en_US-amy-medium"
+      # Esempio voce italiana (puoi cambiarla)
+      MODEL_DOWNLOAD_LINK: "https://huggingface.co/rhasspy/piper-voices/resolve/main/it/it_IT/paola/medium/it_IT-paola-medium.onnx?download=true"
     ports:
       - "5000:5000"
     volumes:
