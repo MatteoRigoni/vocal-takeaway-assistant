@@ -486,7 +486,7 @@ public static class OrdersEndpoints
                 p.Id,
                 p.PaymentMethod?.Name ?? string.Empty,
                 p.Amount,
-                p.PaymentDate,
+                p.PaymentDate.AsUtc(),
                 p.Status))
             .ToList();
 
@@ -496,8 +496,8 @@ public static class OrdersEndpoints
             order.Id,
             order.OrderCode,
             order.OrderStatus?.Name ?? OrderStatusCatalog.Received,
-            order.CreatedAt,
-            order.OrderDate,
+            order.CreatedAt.AsUtc(),
+            order.OrderDate.AsUtc(),
             order.Notes,
             order.TotalAmount,
             isPaid,
